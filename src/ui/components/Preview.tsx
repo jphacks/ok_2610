@@ -45,14 +45,14 @@ export function Preview() {
   if (cursor < result.text.length) originalChunks.push({ start: cursor, text: result.text.slice(cursor) });
 
   return (
-    <div className="card">
+    <div className="card preview-card">
       <div className="row between">
         <h3>プレビュー</h3>
-        <div className="segmented small" role="tablist">
-          <button type="button" role="tab" aria-selected={mode === 'masked'} className={mode === 'masked' ? 'on' : ''} onClick={() => setMode('masked')}>
+        <div className="segmented small" role="group" aria-label="プレビューの切替">
+          <button type="button" aria-pressed={mode === 'masked'} className={mode === 'masked' ? 'on' : ''} onClick={() => setMode('masked')}>
             加工後
           </button>
-          <button type="button" role="tab" aria-selected={mode === 'original'} className={mode === 'original' ? 'on' : ''} onClick={() => setMode('original')}>
+          <button type="button" aria-pressed={mode === 'original'} className={mode === 'original' ? 'on' : ''} onClick={() => setMode('original')}>
             原文
           </button>
         </div>

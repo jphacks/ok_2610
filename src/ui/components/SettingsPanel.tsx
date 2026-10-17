@@ -27,8 +27,13 @@ export function SettingsPanel() {
   }
 
   return (
-    <section className="panel" aria-labelledby="settings-title">
-      <h2 id="settings-title">2. 用途と段階</h2>
+    <section className="panel settings-panel" aria-labelledby="settings-title">
+      <div className="section-heading">
+        <div>
+          <h2 id="settings-title">2. 用途と段階</h2>
+          <p className="hint">AIに頼む作業に合わせて、残す情報を選びます。</p>
+        </div>
+      </div>
 
       <label className="field">
         <span>AIに頼む作業</span>
@@ -55,17 +60,20 @@ export function SettingsPanel() {
 
       <fieldset className="field">
         <legend>段階</legend>
-        <div className="segmented" role="radiogroup" aria-label="段階">
+        <div className="segmented stage-options" role="radiogroup" aria-label="段階">
           {(['A', 'B', 'C'] as Stage[]).map((s) => (
             <button
               key={s}
               type="button"
               role="radio"
               aria-checked={prefs.stage === s}
+              aria-label={STAGE_INFO[s].name}
               className={prefs.stage === s ? 'on' : ''}
               onClick={() => setPrefs({ stage: s })}
             >
-              {STAGE_INFO[s].name}
+              <span className="stage-letter" aria-hidden="true">{s}</span>
+              <span>{STAGE_INFO[s].name.slice(2)}</span>
+              <span className="stage-indicator" aria-hidden="true" />
             </button>
           ))}
         </div>
