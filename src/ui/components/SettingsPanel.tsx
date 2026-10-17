@@ -1,7 +1,7 @@
 import type { Purpose, Stage } from '../../core/model/types';
 import { startNanoDownload } from '../../engines/nano';
 import { clearCustomDictionary } from '../../infra/storage';
-import { PURPOSE_LABEL, STAGE_INFO } from '../labels';
+import { PURPOSE_LABEL, STAGE_INFO, STAGES } from '../labels';
 import { useStore } from '../store';
 
 const KEEP_LABEL = { relationships: '人物の関係', dates: '業務上の日付', amounts: '金額', organizations: '組織の区別' } as const;
@@ -61,7 +61,7 @@ export function SettingsPanel() {
       <fieldset className="field">
         <legend>段階</legend>
         <div className="segmented stage-options" role="radiogroup" aria-label="段階">
-          {(['A', 'B', 'C'] as Stage[]).map((s) => (
+          {STAGES.map((s) => (
             <button
               key={s}
               type="button"

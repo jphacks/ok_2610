@@ -23,7 +23,10 @@ export const DEFAULT_PREFS: Prefs = {
 export async function loadPrefs(): Promise<Prefs> {
   try {
     const { prefs } = await chrome.storage.local.get('prefs');
-    return { ...DEFAULT_PREFS, ...(prefs as Partial<Prefs> | undefined) };
+    const merged = { ...DEFAULT_PREFS, ...(prefs as Partial<Prefs> | undefined) };
+    // 廃止した段階 C などの古い値は既定に戻す
+    if (merged.stage !== 'A' && merged.stage !== 'B') merged.stage = DEFAULT_PREFS.stage;
+    return merged;
   } catch {
     return DEFAULT_PREFS;
   }

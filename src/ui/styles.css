@@ -305,3 +305,8 @@ button.confirmed-button { color: var(--ok); border-color: var(--border); backgro
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; }
 }
+
+/* 組合せリスクへの対策（段階 C の代わり） */
+.risk-plan { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 12px 0; background: var(--surface); }
+.risk-plan p { margin: 0 0 8px; }
+.risk-plan .hint { margin: 8px 0 0; }

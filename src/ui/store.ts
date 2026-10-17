@@ -17,7 +17,9 @@ type State = {
   text: string;
   prefs: Prefs;
   ops: ManualOp[];
-  redo: ManualOp[];
+  /** 元に戻す単位。まとめて適用した操作は1つのまとまりとして戻す（FR-19） */
+  groups: number[];
+  redo: ManualOp[][];
   result: (AnalysisResult & { policy: PolicySummary }) | null;
   analyzing: boolean;
   error: string | null;
@@ -59,6 +61,7 @@ const initial: State = {
   text: '',
   prefs: DEFAULT_PREFS,
   ops: [],
+  groups: [],
   redo: [],
   result: null,
   analyzing: false,
@@ -77,12 +80,22 @@ const initial: State = {
 export const useStore = create<State & Actions>((set) => ({
   ...initial,
   // 本文が変われば手動操作の位置は意味を失うので消す
-  setText: (text) => set({ text, ops: [], redo: [], selectedId: null }),
+  setText: (text) => set({ text, ops: [], groups: [], redo: [], selectedId: null }),
   setPrefs: (patch) => set((s) => ({ prefs: { ...s.prefs, ...patch } })),
-  addOp: (op) => set((s) => ({ ops: [...s.ops, op], redo: [] })),
-  addOps: (ops) => set((s) => ({ ops: [...s.ops, ...ops], redo: [] })),
-  undo: () => set((s) => (s.ops.length ? { ops: s.ops.slice(0, -1), redo: [...s.redo, s.ops.at(-1)!] } : s)),
-  redoOp: () => set((s) => (s.redo.length ? { ops: [...s.ops, s.redo.at(-1)!], redo: s.redo.slice(0, -1) } : s)),
+  addOp: (op) => set((s) => ({ ops: [...s.ops, op], groups: [...s.groups, 1], redo: [] })),
+  addOps: (ops) => set((s) => (ops.length ? { ops: [...s.ops, ...ops], groups: [...s.groups, ops.length], redo: [] } : s)),
+  undo: () =>
+    set((s) => {
+      const size = s.groups.at(-1);
+      if (!size) return s;
+      return { ops: s.ops.slice(0, -size), groups: s.groups.slice(0, -1), redo: [...s.redo, s.ops.slice(-size)] };
+    }),
+  redoOp: () =>
+    set((s) => {
+      const group = s.redo.at(-1);
+      if (!group) return s;
+      return { ops: [...s.ops, ...group], groups: [...s.groups, group.length], redo: s.redo.slice(0, -1) };
+    }),
   setResult: (result) => set({ result }),
   setAnalyzing: (analyzing) => set({ analyzing }),
   setError: (error) => set({ error }),

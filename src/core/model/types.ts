@@ -180,7 +180,7 @@ export type Coverage = {
   reason?: string;
 };
 
-export type Stage = 'A' | 'B' | 'C';
+export type Stage = 'A' | 'B';
 
 export type Purpose = 'summary' | 'reply' | 'classify' | 'rewrite';
 
@@ -259,6 +259,13 @@ export type StageRecommendation = {
   reasons: string[];
 };
 
+/** 組合せリスクへの対策をまとめたもの。提案を上から順に適用したときの注意度の変化（§7） */
+export type RiskPlan = {
+  steps: RiskSuggestion[];
+  levelBefore: RiskLevel;
+  levelAfter: RiskLevel;
+};
+
 export type OutputSegment =
   | { kind: 'plain'; text: string }
   | { kind: 'changed'; text: string; original: string; candidateId: string }
@@ -273,6 +280,8 @@ export type AnalysisResult = {
   engines: EngineStatus[];
   explanations: Record<string, Explanation>;
   recommendation: StageRecommendation;
+  /** 注意以上のときだけ。原因になっている項目だけを加工する対策 */
+  riskPlan: RiskPlan | null;
   masked: string;
   segments: OutputSegment[];
   recheck: RecheckFinding[];

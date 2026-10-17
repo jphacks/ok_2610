@@ -29,6 +29,18 @@ export function RiskPanel() {
     addOps(ops);
   }
 
+  /** 対策をまとめて1回の操作として適用する（元に戻すときも、まとめて戻る） */
+  function applyPlan() {
+    if (!result?.riskPlan) return;
+    const ops: ManualOp[] = result.riskPlan.steps.flatMap((step) =>
+      step.candidateIds.flatMap((id) => {
+        const c = byId.get(id);
+        return c ? [{ kind: 'setAction' as const, start: c.start, end: c.end, action: step.action }] : [];
+      }),
+    );
+    addOps(ops);
+  }
+
   return (
     <div className={`card risk-card tone-${RISK_TONE[finding.level]}`}>
       <h3>
@@ -51,6 +63,17 @@ export function RiskPanel() {
           <li key={r}>{r}</li>
         ))}
       </ul>
+      {result.riskPlan && (
+        <div className="risk-plan">
+          <p>
+            原因になっている {result.riskPlan.steps.length} か所だけを加工すると、注意度が「{result.riskPlan.levelBefore}」→「{result.riskPlan.levelAfter}」になる見込みです。
+          </p>
+          <button type="button" className="primary" onClick={() => applyPlan()}>
+            対策をまとめて適用（{result.riskPlan.steps.length}件）
+          </button>
+          <p className="hint">適用後も、項目ごとに戻せます。要約に必要な情報まで消えていないか確認してください。</p>
+        </div>
+      )}
       {finding.suggestions.length > 0 && (
         <>
           <h4>効果の大きい追加加工</h4>

@@ -8,9 +8,10 @@ test('デモの問合せメールを解析し、確認した加工文だけを�
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await page.getByLabel('解析する文章').fill(demo);
 
-  // 判断支援: 組合せの手がかりと、おすすめ段階
+  // 判断支援: 組合せの手がかりと、原因の項目だけを加工する対策
   await expect(page.getByText('組合せの手がかり: 要注意')).toBeVisible({ timeout: 90_000 });
-  await expect(page.getByText('おすすめ: 段階 C')).toBeVisible();
+  await expect(page.getByRole('button', { name: /対策をまとめて適用/ })).toBeVisible();
+  await expect(page.getByRole('radio', { name: /^C/ })).toHaveCount(0);
 
   // NER がブラウザの Worker 内で動いたか（スパイク S4）
   await expect(page.getByText(/NER: 実行（\d+件/)).toBeVisible({ timeout: 90_000 });
@@ -31,7 +32,7 @@ test('デモの問合せメールを解析し、確認した加工文だけを�
   await expect(copy).toBeEnabled();
 
   // AT-05: 確認後に設定を変えると、確認が失効して出力できない
-  await page.getByRole('radio', { name: 'C 情報量をさらに削減' }).click();
+  await page.getByRole('radio', { name: 'A 識別情報を優先' }).click();
   await expect(page.getByText('内容が変わったため、確認をやり直してください')).toBeVisible();
   await expect(copy).toBeDisabled();
   await page.getByRole('button', { name: 'この加工文で確認する' }).click();
@@ -65,4 +66,19 @@ test('AIの回答の仮ラベルを元に戻せる', async ({ context, extension
   await page.getByRole('textbox', { name: 'AIの回答' }).fill(`${label}さんは[注文番号1]の配達日を気にしています。`);
   await page.getByRole('button', { name: 'ラベルを元の語に戻す' }).click();
   await expect(page.getByLabel('元に戻した文章')).toHaveText('佐藤花子さんはAB-20261003-1182の配達日を気にしています。');
+});
+
+test('対策をまとめて適用すると注意度が下がり、1回の「元に戻す」でまとめて戻る（段階 C の代わり）', async ({ context, extensionId }) => {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await page.getByLabel('解析する文章').fill(demo);
+  const plan = page.getByRole('button', { name: /対策をまとめて適用/ });
+  await expect(plan).toBeVisible({ timeout: 90_000 });
+  const before = await page.getByLabel('出力される文章').textContent();
+  await plan.click();
+  await expect(page.getByText('組合せの手がかり: 要注意')).toHaveCount(0);
+  await expect(page.getByLabel('出力される文章')).toContainText('10月3日');
+  await page.getByRole('button', { name: '操作を元に戻す', exact: true }).click();
+  await expect(page.getByText('組合せの手がかり: 要注意')).toBeVisible();
+  await expect(page.getByLabel('出力される文章')).toHaveText(before!);
 });

@@ -28,7 +28,7 @@ import { lockedCategories, policyVersion, type ResolvedPolicy } from './policy';
 import type { ConditionsResult } from './conditions';
 import { recheck } from './recheck';
 import { computeContentId } from './review';
-import { evaluateCombination, riskRank } from './risk/combination';
+import { evaluateCombination, planRiskReduction, riskRank } from './risk/combination';
 import { prefectureOf } from './transform/generalize';
 import { render } from './transform/render';
 import { actionStrength, decideAction, maxStage } from './transform/stages';
@@ -182,28 +182,19 @@ function decideAll(bases: Base[], stage: Stage, input: AnalyzeInput, entityOf: M
 
 function recommendStage(levels: Record<Stage, RiskFinding[]>, current: Stage): StageRecommendation {
   const levelOf = (s: Stage) => levels[s][0]?.level ?? 'なし';
-  const rank = (s: Stage) => riskRank(levelOf(s));
-  const stages: Stage[] = ['A', 'B', 'C'];
   if (levelOf(current) === '評価不能') {
     return { stage: current, reasons: ['検出の一部が失敗しているため、おすすめ段階を出せません。'] };
   }
-  const calm = stages.find((s) => rank(s) === 0);
-  if (calm) {
-    const reasons =
-      calm === 'A'
-        ? ['加工後に残る組合せの手がかりが少ないため、意味を最も保てる A でも足りる可能性があります。']
-        : [`段階 ${calm} で、組合せの手がかりが十分に減ります。`];
-    if (calm !== current) reasons.push(`現在は段階 ${current}（注意度: ${levelOf(current)}）です。`);
-    return { stage: calm, reasons };
+  if (riskRank(levelOf('A')) === 0) {
+    const reasons = ['加工後に残る組合せの手がかりが少ないため、意味を最も保てる A でも足りる可能性があります。'];
+    if (current !== 'A') reasons.push(`現在は段階 ${current} です。`);
+    return { stage: 'A', reasons };
   }
-  const notSevere = stages.find((s) => rank(s) <= 1) ?? 'C';
-  return {
-    stage: notSevere,
-    reasons: [
-      `段階 ${notSevere} にすると、注意度が「${levelOf(notSevere)}」になります。`,
-      rank('C') > 0 ? '段階 C でも組合せの手がかりが残ります。個別の追加加工を検討してください。' : '',
-    ].filter(Boolean),
-  };
+  const reasons = [`段階 A では組合せの手がかりが残ります（注意度: ${levelOf('A')}）。属性も一般化する B をおすすめします。`];
+  if (riskRank(levelOf('B')) > 0) {
+    reasons.push(`段階 B でも手がかりが残ります（注意度: ${levelOf('B')}）。「対策をまとめて適用」で、原因になっている項目だけを加工できます。`);
+  }
+  return { stage: 'B', reasons };
 }
 
 /** 全工程（検出 → 文脈 → 同一対象 → 段階 → 組合せ → 理由 → 再検査 → 確認単位）を実行する */
@@ -265,10 +256,11 @@ export async function analyze(input: AnalyzeInput): Promise<AnalysisResult> {
 
   const risks = evaluateCombination({ candidates: current.candidates, analysisFailed });
   const perStage = {} as Record<Stage, RiskFinding[]>;
-  for (const s of ['A', 'B', 'C'] as Stage[]) {
+  for (const s of ['A', 'B'] as Stage[]) {
     perStage[s] = s === stage ? risks : evaluateCombination({ candidates: decideAll(bases, s, input, entityOf).candidates, analysisFailed });
   }
   const recommendation = recommendStage(perStage, stage);
+  const riskPlan = analysisFailed ? null : planRiskReduction(current.candidates);
 
   const explanations: AnalysisResult['explanations'] = {};
   for (const c of current.candidates) {
@@ -329,6 +321,7 @@ export async function analyze(input: AnalyzeInput): Promise<AnalysisResult> {
     engines,
     explanations,
     recommendation,
+    riskPlan,
     masked: rendered.masked,
     segments: rendered.segments,
     recheck: recheckFindings,
