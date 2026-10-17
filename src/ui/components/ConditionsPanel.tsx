@@ -21,10 +21,11 @@ export function ConditionsPanel() {
           : { tone: 'muted', text: 'まだ回答していません。' };
 
   return (
-    <section className="panel" aria-labelledby="cond-title">
+    <section className="panel conditions-panel" aria-labelledby="cond-title">
       <details open={conditions.status === 'restricted' || conditions.status === 'unknown'}>
         <summary>
           <h2 id="cond-title">3. 利用条件の確認</h2>
+          <span className={`chip chip-${status.tone}`}>{conditions.status === 'unanswered' ? '未回答' : conditions.status === 'selfDeclaredOk' ? '回答済み' : '要確認'}</span>
         </summary>
         <p className="hint">ツールは利用の可否を判定しません。分からない項目は確認先を一覧にします。</p>
         {QUESTIONS.map((q) => (

@@ -13,7 +13,7 @@ export function RiskPanel() {
 
   if (!finding) {
     return (
-      <div className="card">
+      <div className="card risk-card">
         <h3>組合せの手がかり</h3>
         <p>加工後に残る組合せの手がかりは少なめです。</p>
         <p className="hint">{MESSAGES.externalNotChecked}</p>
@@ -30,18 +30,21 @@ export function RiskPanel() {
   }
 
   return (
-    <div className={`card tone-${RISK_TONE[finding.level]}`}>
+    <div className={`card risk-card tone-${RISK_TONE[finding.level]}`}>
       <h3>
         組合せの手がかり: <span className="level">{finding.level}</span>
       </h3>
       {finding.attributes.length > 0 && (
-        <ul className="attrs" aria-label="残っている手がかり">
-          {[...new Map(finding.attributes.map((a) => [a.text, a])).values()].map((a) => (
-            <li key={a.candidateId} className={a.weight < 1 ? 'weak' : ''} title={a.weight < 1 ? '一般化済み（弱い手がかり）' : 'そのまま残っている'}>
-              {byId.get(a.candidateId)?.output || a.text}
-            </li>
-          ))}
-        </ul>
+        <details className="risk-attributes">
+          <summary>残っている手がかりを見る</summary>
+          <ul className="attrs" aria-label="残っている手がかり">
+            {[...new Map(finding.attributes.map((a) => [a.text, a])).values()].map((a) => (
+              <li key={a.candidateId} className={a.weight < 1 ? 'weak' : ''} title={a.weight < 1 ? '一般化済み（弱い手がかり）' : 'そのまま残っている'}>
+                {byId.get(a.candidateId)?.output || a.text}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       <ul>
         {finding.reasons.map((r) => (

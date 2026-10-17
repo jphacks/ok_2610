@@ -5,6 +5,7 @@ import { copyText } from '../../infra/clipboard';
 import { log } from '../../infra/logger';
 import { getActiveTab, insertToTab, requestSitePermission } from '../../infra/tabs';
 import { canOutput, destinationKey, useStore } from '../store';
+import { Icon } from './Icon';
 
 /** 出力（FR-22, FR-23）。確認した版と送信先が一致するときだけ、コピー・挿入できる */
 export function OutputPanel() {
@@ -58,9 +59,15 @@ export function OutputPanel() {
   const site = destination.kind === 'insert' ? siteForUrl(destination.origin) : undefined;
 
   return (
-    <section className="panel" aria-labelledby="output-title">
-      <h2 id="output-title">4. 出力</h2>
-      <fieldset className="field">
+    <section className="panel output-panel" aria-labelledby="output-title">
+      <div className="section-heading">
+        <div>
+          <h2 id="output-title">4. 出力</h2>
+          <p className="hint">内容を確認してから、AIで使う文章をコピーします。</p>
+        </div>
+        <span className={`chip chip-${ready ? 'ok' : blocked ? 'danger' : 'muted'}`}>{ready ? '確認済み' : analyzing ? '解析中' : blocked ? '出力停止中' : '未確認'}</span>
+      </div>
+      <fieldset className="field destination-options">
         <legend>出力先</legend>
         <label className="check-line">
           <input type="radio" name="dest" checked={destination.kind === 'copy'} onChange={() => state.setDestination({ kind: 'copy' })} />
@@ -100,20 +107,25 @@ export function OutputPanel() {
       <div className="output-preview" aria-label="出力される文章">
         {result.masked}
       </div>
-      <div className="row">
+      <div className="output-actions">
         <button
           type="button"
+          className={ready ? 'confirmed-button' : 'primary'}
           disabled={blocked}
           onClick={() => state.confirm({ contentId: result.contentId, destinationKey: destinationKey(destination), masked: result.masked })}
         >
+          <Icon name="check" />
           {MESSAGES.confirmButton}
         </button>
-        <button type="button" className="primary" disabled={!ready} onClick={() => void onOutput()}>
+        <Icon name="arrow" className="action-arrow" />
+        <button type="button" className={ready ? 'primary' : ''} disabled={!ready} onClick={() => void onOutput()}>
+          <Icon name={destination.kind === 'copy' ? 'copy' : 'arrow'} />
           {destination.kind === 'copy' ? MESSAGES.outputCopy : MESSAGES.outputInsert}
         </button>
       </div>
       {stale && <p className="hint warn">{MESSAGES.invalidated}</p>}
       {ready && <p className="hint">{MESSAGES.confirmed}</p>}
+      {!ready && !blocked && !stale && <p className="hint">加工文を確認すると、コピー・挿入できるようになります。</p>}
       {message && <p className="hint" role="status">{message}</p>}
       <p className="hint">{MESSAGES.clipboardNote}</p>
     </section>

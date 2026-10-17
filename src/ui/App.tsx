@@ -17,6 +17,7 @@ export function App() {
   const notice = useStore((s) => s.notice);
   const error = useStore((s) => s.error);
   const hasText = useStore((s) => s.text.trim().length > 0);
+  const result = useStore((s) => s.result);
 
   return (
     <div className="app">
@@ -38,8 +39,14 @@ export function App() {
         <InputPanel />
         <SettingsPanel />
         {hasText && (
-          <section className="panel" aria-labelledby="result-title">
-            <h2 id="result-title">結果</h2>
+          <section className="panel results-panel" aria-labelledby="result-title">
+            <div className="section-heading">
+              <div>
+                <h2 id="result-title">結果</h2>
+                <p className="hint">残る手がかりと加工文を確認してください。</p>
+              </div>
+              {result && <span className="text-count">検出 {result.candidates.length} 箇所</span>}
+            </div>
             <RiskPanel />
             <Preview />
             <DetailPanel />
