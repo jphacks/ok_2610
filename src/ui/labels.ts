@@ -1,4 +1,4 @@
-import type { Action, Purpose, RiskLevel } from '../core/model/types';
+import type { Action, Purpose, RiskLevel, Stage } from '../core/model/types';
 
 export const PURPOSE_LABEL: Record<Purpose, string> = {
   summary: '要約',
@@ -7,11 +7,12 @@ export const PURPOSE_LABEL: Record<Purpose, string> = {
   rewrite: '文章の改善',
 };
 
-export const STAGE_INFO = {
+export const STAGE_INFO: Record<Stage, { name: string; note: string }> = {
   A: { name: 'A 識別情報を優先', note: '氏名・連絡先などを置き換えます。地域や出来事から特定される場合があります。' },
-  B: { name: 'B 属性も一般化', note: '年齢・地域・日付・所属を粗くします。珍しい経歴や組合せが残る場合があります。' },
-  C: { name: 'C 情報量をさらに削減', note: '特徴的な記述や機微な詳細も抽象化します。要約の意味が失われる場合があります。' },
-} as const;
+  B: { name: 'B 属性も一般化', note: '年齢・地域・日付・所属を粗くします。珍しい経歴や組合せが残る場合は、結果の「対策をまとめて適用」で原因の項目だけを加工できます。' },
+};
+
+export const STAGES: Stage[] = ['A', 'B'];
 
 export const RISK_TONE: Record<RiskLevel, 'info' | 'warn' | 'danger' | 'unknown'> = {
   情報: 'info',

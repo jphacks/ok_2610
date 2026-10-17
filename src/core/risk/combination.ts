@@ -1,5 +1,5 @@
 import { CATEGORY_INFO } from '../model/categories';
-import type { Action, Candidate, QuasiType, RiskFinding, RiskLevel, RiskSuggestion } from '../model/types';
+import type { Action, Candidate, QuasiType, RiskFinding, RiskLevel, RiskPlan, RiskSuggestion } from '../model/types';
 import { comparisonKey } from '../detect/normalize';
 import { actionStrength } from '../transform/stages';
 
@@ -187,6 +187,31 @@ export function evaluateCombination({ candidates, analysisFailed }: RiskInput): 
       suggestions: ranked.slice(0, 3).map((r) => r.suggestion),
     },
   ];
+}
+
+const MAX_PLAN_STEPS = 6;
+
+/**
+ * 組合せリスクへの対策をまとめる（段階 C の代わり）。
+ * 一律に強くするのではなく、そのときに最も効く提案を1つずつ適用し、注意度が下がるまで繰り返す。
+ * 返すのは提案の一覧と、適用後の注意度の見込み。実際の適用は利用者が選ぶ。
+ */
+export function planRiskReduction(candidates: Candidate[]): RiskPlan | null {
+  const first = evaluateCombination({ candidates, analysisFailed: false })[0];
+  if (!first || first.level === '情報' || first.level === '評価不能') return null;
+  let current = candidates;
+  const steps: RiskSuggestion[] = [];
+  for (let i = 0; i < MAX_PLAN_STEPS; i++) {
+    const finding = evaluateCombination({ candidates: current, analysisFailed: false })[0];
+    const next = finding?.suggestions[0];
+    if (!finding || !next) break;
+    steps.push(next);
+    const ids = new Set(next.candidateIds);
+    current = current.map((c) => (ids.has(c.id) ? { ...c, action: next.action } : c));
+  }
+  if (steps.length === 0) return null;
+  const after = evaluateCombination({ candidates: current, analysisFailed: false })[0]?.level ?? '情報';
+  return { steps, levelBefore: first.level, levelAfter: after };
 }
 
 export function riskRank(level: RiskLevel | 'なし'): number {

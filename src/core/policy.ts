@@ -13,7 +13,7 @@ export const PolicySchema = z.object({
   expiresAt: z.string().optional(),
   allowedOrigins: z.array(z.string()).optional(),
   prohibitedCategories: z.array(categoryEnum).optional(),
-  minStage: z.enum(['A', 'B', 'C']).optional(),
+  minStage: z.enum(['A', 'B']).optional(),
   minProfile: z.array(z.enum(['rule', 'ner', 'nano'])).optional(),
   /** 利用者が解除（そのまま残す）できない分類 */
   lockedCategories: z.array(categoryEnum).optional(),

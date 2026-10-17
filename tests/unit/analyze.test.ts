@@ -29,20 +29,40 @@ describe('デモの問合せメール', () => {
     expect(byText(r, '10月20日')[0]).toMatchObject({ role: 'businessDate', output: '10月20日' });
   });
 
-  test('AT-02: 組合せの理由と追加加工の提案を出し、段階 C をすすめる', async () => {
-    const r = await run(demoEmail);
+  test('AT-02: 組合せの理由と追加加工の提案を出し、段階 B をすすめる', async () => {
+    const r = await run(demoEmail, { settings: settings({ stage: 'A' }) });
     expect(r.risks[0]?.level).toBe('要注意');
     expect(r.risks[0]?.reasons.join('')).toContain('照合はしていません');
     expect(r.risks[0]?.suggestions.length).toBeGreaterThan(0);
-    expect(r.recommendation.stage).toBe('C');
+    expect(r.recommendation.stage).toBe('B');
+  });
+
+  test('対策のまとめ: 原因の項目だけを加工すると注意度が下がる（段階 C の代わり）', async () => {
+    const r = await run(demoEmail);
+    const plan = r.riskPlan!;
+    expect(plan.levelBefore).toBe('要注意');
+    expect(['注意', '情報']).toContain(plan.levelAfter);
+    // 実際に適用すると、見込みどおりに下がる
+    const byId = new Map(r.candidates.map((c) => [c.id, c]));
+    const ops = plan.steps.flatMap((s) => s.candidateIds.map((id) => ({ kind: 'setAction' as const, start: byId.get(id)!.start, end: byId.get(id)!.end, action: s.action })));
+    const applied = await run(demoEmail, { ops });
+    expect(applied.risks[0]?.level ?? '情報').toBe(plan.levelAfter);
+    // 原因でない識別子や業務日はそのまま（一律に削らない）
+    expect(applied.masked).toContain('10月3日');
+    expect(applied.masked).toContain('[注文番号1]');
+  });
+
+  test('手がかりが少ない文章では、意味を最も保てる A をすすめ、対策は出さない', async () => {
+    const r = await run('田中さんから、来週の会議資料について連絡がありました。');
+    expect(r.recommendation.stage).toBe('A');
+    expect(r.riskPlan).toBeNull();
   });
 
   test('段階を強めても、表に出る原情報は増えない（FR-13）', async () => {
-    const [a, b, c] = await Promise.all((['A', 'B', 'C'] as const).map((stage) => run(demoEmail, { settings: settings({ stage }) })));
+    const [a, b] = await Promise.all((['A', 'B'] as const).map((stage) => run(demoEmail, { settings: settings({ stage }) })));
     const kept = (r: typeof a) => new Set(r!.candidates.filter((x) => x.output === x.text).map((x) => x.id));
-    const ka = kept(a), kb = kept(b), kc = kept(c);
+    const ka = kept(a), kb = kept(b);
     expect([...kb].every((id) => ka.has(id))).toBe(true);
-    expect([...kc].every((id) => kb.has(id))).toBe(true);
   });
 });
 
@@ -104,10 +124,14 @@ describe('組織ポリシー（FR-18, AT-09）', () => {
     expect((await run(demoEmail, { policy: expired })).blockers.some((b) => b.kind === 'policy')).toBe(true);
   });
 
+  test('廃止した段階 C を指定したポリシーは読み込めず、停止する', () => {
+    expect(resolvePolicy({ version: '1', minStage: 'C' }, now).status).toBe('error');
+  });
+
   test('最低段階と解除禁止を適用し、利用条件が不明なら止める', async () => {
-    const policy = resolvePolicy({ version: '2026.10', minStage: 'C', lockedCategories: ['personName'], requireConditions: true }, now);
-    const base = await run(demoEmail, { policy });
-    expect(base.candidates.find((c) => c.categories.includes('sensitive'))?.output).toBe('補助具');
+    const policy = resolvePolicy({ version: '2026.10', minStage: 'B', lockedCategories: ['personName'], requireConditions: true }, now);
+    const base = await run(demoEmail, { policy, settings: settings({ stage: 'A' }) });
+    expect(base.candidates.find((c) => c.text === '1958年4月12日')?.output).toBe('1950年代');
     const sato = byText(base, '佐藤花子')[0]!;
     const r = await run(demoEmail, { policy, ops: [{ kind: 'release', start: sato.start, end: sato.end }], conditions: { status: 'unknown', restricted: [], consult: [] } });
     expect(r.opIssues[0]?.kind).toBe('rejected');
@@ -118,7 +142,7 @@ describe('組織ポリシー（FR-18, AT-09）', () => {
 test('確認単位: 同じ入力なら同じ ID、設定が変われば別の ID（FR-22）', async () => {
   const a = await run(demoEmail);
   const b = await run(demoEmail);
-  const c = await run(demoEmail, { settings: settings({ stage: 'C' }) });
+  const c = await run(demoEmail, { settings: settings({ stage: 'A' }) });
   expect(a.contentId).toBe(b.contentId);
   expect(c.contentId).not.toBe(a.contentId);
 });

@@ -37,7 +37,7 @@ const TEMPLATES: Record<Category, Template> = {
 
 const ROLE_TEXT: Record<Role, string> = {
   birthDate: '生年月日と判断しました。年齢が分かり、他の情報と組み合わさると本人を絞り込めます。',
-  businessDate: '注文日や配達日などの業務上の日付と判断しました。要約に必要なことが多いため、段階 A・B では残します。',
+  businessDate: '注文日や配達日などの業務上の日付と判断しました。要約に必要なことが多いため、そのまま残します。',
   sensitiveDate: '受診や入院などに関わる日付と判断しました。慎重に扱う情報と結び付くため、粒度を粗くします。',
   unknownDate: '日付の役割を判断できませんでした。生年月日か業務上の日付かを確認してください。',
   example: '例として書かれた日付の可能性があります。',
