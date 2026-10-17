@@ -1,0 +1,14 @@
+node_modules/
+.output/
+.wxt/
+web-ext.config.ts
+test-results/
+playwright-report/
+
+# NER モデルと ONNX Runtime の WASM は setup で配置する（GitHub の 100MB 制限のため Git に入れない）
+public/models/
+public/ort/
+.venv-ner/
+
+.DS_Store
+*.log

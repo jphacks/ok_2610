@@ -164,6 +164,16 @@
 
 ---
 
+### スパイクの結果（2026年10月17日）
+
+| ID | 結果 |
+|---|---|
+| S1 | **合格**。Transformers.js **4.3.0** で動作。出力に文字位置はないが、`word` と `index` から原文の位置を復元できる（`src/engines/ner-post.ts`）。Node で読込み 0.8 秒・推論 0.08 秒 |
+| S1 補足 | 元モデルには ONNX 版がない。第三者の変換物は出所を確認できないため、`scripts/convert-ner.py` で revision を固定して自分たちで変換・8bit 量子化した（278MB、MIT） |
+| S1 補足 | Transformers.js は既定で WASM を CDN（jsdelivr）から Blob URL 経由で読む。LP-01 に反するため、WASM を同梱し `wasmPaths` を拡張内に固定、`useWasmCache=false` にした（`npm run setup:ner`） |
+| S4 | **合格**。WXT で Worker・WASM（CSP に `'wasm-unsafe-eval'`）・モデル同梱のビルドが通り、拡張を読み込んだ Chromium で NER が動いた。初回はモデル読込みに約8秒。E2E で外部リクエスト 0 件を確認 |
+| S3 | 未実施。Gemini の入力欄への挿入は実装済みだが、実サイトでの確認はまだ（`src/adapters/sites.ts` の `verifiedAt` が空） |
+
 ## 6. 実装の順序（24時間・2人）
 
 要件の範囲は絞らず、**安全の骨組みを先に作り、検出の質を後から上げる**順に進める。

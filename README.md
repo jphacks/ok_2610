@@ -69,6 +69,29 @@
 
 ### 独自技術
 #### ハッカソンで開発した独自機能・技術
+
+* 独自で開発したものの内容をこちらに記載してください
+* 特に力を入れた部分をファイルリンク、またはcommit_idを記載してください。
+
+## 開発の始め方
+
+```bash
+npm install
+# NER モデルを変換して配置（初回のみ。Python 3 が必要。数分かかります）
+python3 -m venv .venv-ner && .venv-ner/bin/pip install "optimum[onnxruntime]" torch
+.venv-ner/bin/python scripts/convert-ner.py
+npm run setup:ner      # ONNX Runtime の WASM を同梱し、モデルのハッシュを確認
+
+npm run dev            # 開発用の Chrome が拡張を読み込んだ状態で起動
+npm run build          # .output/chrome-mv3 に本番ビルド（chrome://extensions で読み込む）
+npm test               # ユニットテスト
+npm run test:e2e       # ビルドして、拡張を読み込んだ Chromium で E2E テスト
+npm run lint && npm run compile
+```
+
+設計は [ARCHITECTURE.md](ARCHITECTURE.md)、技術の選定理由は [TECH_SELECTION.md](TECH_SELECTION.md)、要件は [要件定義書](個人情報マスキング判断支援ツール_詳細要件定義書.md) を参照してください。
+
 * 準識別子の束と希少性の手がかりから注意度を決定的に評価し、どの項目を一般化・削除すると束が最も小さくなるかを提案する組合せリスク評価
 * 入力・設定・手動操作・ポリシー・検出器の版・送信先をハッシュで束ねた「確認単位」による出力制御
 * 詳細は [要件定義書](個人情報マスキング判断支援ツール_詳細要件定義書.md)（commit: 3a9233e）、[ARCHITECTURE.md](ARCHITECTURE.md) と [TECH_SELECTION.md](TECH_SELECTION.md)（commit: dc0e2ff）を参照
+
