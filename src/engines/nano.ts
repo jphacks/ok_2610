@@ -50,26 +50,33 @@ export function startNanoDownload(onProgress: (ratio: number) => void): Promise<
     .catch(() => false);
 }
 
-/** 例外を投げない。JSON が壊れたら1回だけ再試行する */
-export async function detectNano(text: string): Promise<EngineOutput> {
+/** 解析失敗は結果として返し、中断だけは例外で伝える。JSON が壊れたら1回だけ再試行する。 */
+export async function detectNano(text: string, signal?: AbortSignal): Promise<EngineOutput> {
   const t0 = performance.now();
   try {
     const availability = await nanoAvailability();
+    signal?.throwIfAborted();
     if (availability !== 'available') {
       const reason = availability === 'unsupported' ? 'このブラウザでは Prompt API が使えません' : availability === 'unavailable' ? 'この端末では Gemini Nano が使えません' : 'モデルがまだ取得されていません';
       return { engine: 'nano', status: 'unavailable', reason, ms: 0, spans: [], version: NANO_VERSION };
     }
     base ??= createBase();
     const root = await base;
+    signal?.throwIfAborted();
     const spans = [];
     for (const chunk of chunkText(text, 1200)) {
       if (!chunk.text.trim()) continue;
       let answer = null;
       for (let attempt = 0; attempt < 2 && !answer; attempt++) {
         const session = await root.clone();
+        const abort = () => session.destroy();
         try {
-          answer = parseNanoAnswer(await session.prompt(chunk.text, { responseConstraint: NANO_SCHEMA }));
+          signal?.throwIfAborted();
+          signal?.addEventListener('abort', abort, { once: true });
+          answer = parseNanoAnswer(await session.prompt(chunk.text, { responseConstraint: NANO_SCHEMA, signal }));
+          signal?.throwIfAborted();
         } finally {
+          signal?.removeEventListener('abort', abort);
           session.destroy();
         }
       }
@@ -78,6 +85,7 @@ export async function detectNano(text: string): Promise<EngineOutput> {
     }
     return { engine: 'nano', status: 'ok', ms: Math.round(performance.now() - t0), spans, version: NANO_VERSION };
   } catch (e) {
+    if (signal?.aborted) throw e;
     base = null;
     return {
       engine: 'nano',

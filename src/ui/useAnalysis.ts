@@ -1,20 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { evaluateConditions } from '../core/conditions';
 import { parseCustomTerms } from '../core/detect/dictionary';
-import type { EngineOutput } from '../core/analyze';
-import { detectNano, nanoAvailability } from '../engines/nano';
+import { nanoAvailability } from '../engines/nano';
 import { log } from '../infra/logger';
 import { loadPrefs, onManagedPolicyChanged, onPendingText, readManagedPolicy, savePrefs, takePendingText } from '../infra/storage';
-import { createWorkerClient, type WorkerClient } from '../infra/worker-client';
+import { sessionNano, workerClient } from '../infra/analysis-session';
 import { settingsFrom, useStore } from './store';
 
 const DEBOUNCE_MS = 350;
-
-let client: WorkerClient | null = null;
-export function workerClient(): WorkerClient {
-  client ??= createWorkerClient();
-  return client;
-}
 
 /**
  * 入力・設定・手動操作・利用条件・組織ポリシーが変わるたびに解析し直す。
@@ -25,25 +18,33 @@ export function useAnalysis() {
   const prefs = useStore((s) => s.prefs);
   const ops = useStore((s) => s.ops);
   const answers = useStore((s) => s.answers);
-  const requestRef = useRef(0);
-  const nanoCache = useRef(new Map<string, EngineOutput>());
-  const policyTick = useStore((s) => s.notice);
+  const revision = useStore((s) => s.revision);
   const loaded = useRef(false);
 
   // 起動時: 設定・エンジンの状態・右クリックの受け渡しを読む
   useEffect(() => {
+    let disposed = false;
+    const sessionId = useStore.getState().sessionId;
+    const active = () => !disposed && useStore.getState().sessionId === sessionId;
     void (async () => {
       const p = await loadPrefs();
+      if (!active()) return;
       useStore.getState().setPrefs(p);
       loaded.current = true;
       const pending = await takePendingText();
+      if (!active()) return;
       if (pending) useStore.getState().setText(pending);
-      useStore.getState().setNerStatus(await workerClient().call('nerStatus'));
-      useStore.getState().setNanoStatus(await nanoAvailability());
+      try {
+        const status = await workerClient().call('nerStatus');
+        if (active()) useStore.getState().setNerStatus(status);
+      } catch { /* 削除による Worker の終了時は結果を反映しない */ }
+      const nano = await nanoAvailability();
+      if (active()) useStore.getState().setNanoStatus(nano);
     })();
-    const offPending = onPendingText((t) => useStore.getState().setText(t));
-    const offPolicy = onManagedPolicyChanged(() => useStore.getState().setNotice('組織ポリシーが更新されました'));
+    const offPending = onPendingText((t) => useStore.getState().setText(t), () => useStore.getState().sessionId);
+    const offPolicy = onManagedPolicyChanged(() => useStore.getState().policyChanged());
     return () => {
+      disposed = true;
       offPending();
       offPolicy();
     };
@@ -56,38 +57,38 @@ export function useAnalysis() {
   useEffect(() => {
     const conditions = evaluateConditions(answers);
     useStore.getState().setConditions(conditions);
-    const id = ++requestRef.current;
+    let disposed = false;
+    const active = () => !disposed && revision === useStore.getState().revision;
     const timer = setTimeout(async () => {
+      if (!active()) return;
       const store = useStore.getState();
       store.setAnalyzing(true);
       store.setError(null);
       const t0 = performance.now();
       try {
         const settings = settingsFrom(prefs, parseCustomTerms(prefs.customText));
-        let nano: EngineOutput | undefined;
-        if (prefs.useNano && text.trim()) {
-          nano = nanoCache.current.get(text) ?? (await detectNano(text));
-          if (nano.status === 'ok') nanoCache.current.set(text, nano);
-        }
-        if (id !== requestRef.current) return;
+        const nano = prefs.useNano && text.trim() ? await sessionNano(text) : undefined;
+        if (!active()) return;
+        const policyRaw = await readManagedPolicy();
+        if (!active()) return;
         const result = await workerClient().call('analyze', {
           text,
           settings,
           ops,
-          policyRaw: await readManagedPolicy(),
+          policyRaw,
           nowIso: new Date().toISOString(),
           conditions,
           ...(nano ? { nano } : {}),
         });
-        if (id !== requestRef.current) return;
-        store.setResult(result);
+        if (!active()) return;
+        store.setResult(result, revision);
         log('analyze', { ms: Math.round(performance.now() - t0), candidates: result.candidates.length, blockers: result.blockers.length });
       } catch (e) {
-        if (id === requestRef.current) store.setError(e instanceof Error ? e.message : '解析できませんでした');
+        if (active()) store.setError(e instanceof Error ? e.message : '解析できませんでした');
       } finally {
-        if (id === requestRef.current) store.setAnalyzing(false);
+        if (active()) store.setAnalyzing(false);
       }
     }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [text, prefs, ops, answers, policyTick]);
+    return () => { disposed = true; clearTimeout(timer); };
+  }, [text, prefs, ops, answers, revision]);
 }

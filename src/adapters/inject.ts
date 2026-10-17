@@ -4,7 +4,12 @@
 
 export type InsertOutcome = { ok: true } | { ok: false; reason: string };
 
-export async function insertIntoAiInput(siteId: string, text: string): Promise<InsertOutcome> {
+export async function insertIntoAiInput(siteId: string, text: string, expectedOrigin: string): Promise<InsertOutcome> {
+  const ORIGINS: Record<string, string> = { gemini: 'https://gemini.google.com', chatgpt: 'https://chatgpt.com', claude: 'https://claude.ai' };
+  // タブ取得後の遷移にも備え、DOM に触れる前に実行先自身で照合する。
+  if (ORIGINS[siteId] !== expectedOrigin || location.origin !== expectedOrigin) {
+    return { ok: false, reason: '挿入先のページが変わりました。挿入先を設定し直してください。' };
+  }
   const SELECTORS: Record<string, string[]> = {
     gemini: ['rich-textarea .ql-editor[contenteditable="true"]', 'div.ql-editor[contenteditable="true"]'],
     chatgpt: ['div#prompt-textarea[contenteditable="true"]', 'textarea#prompt-textarea'],

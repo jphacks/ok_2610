@@ -3,7 +3,8 @@ import type { Answer, ConditionsResult } from '../core/conditions';
 import type { AnalysisResult, ManualOp, Settings } from '../core/model/types';
 import type { PolicySummary } from '../worker/protocol';
 import type { NanoAvailability } from '../engines/nano';
-import { DEFAULT_PREFS, type Prefs } from '../infra/storage';
+import { clearPendingText, DEFAULT_PREFS, type Prefs } from '../infra/storage';
+import { clearAnalysisSession } from '../infra/analysis-session';
 
 // サイドパネルの状態。原文・対応表・解析結果はメモリにだけ置き、パネルを閉じれば消える。
 
@@ -14,6 +15,10 @@ export const destinationKey = (d: Destination) => (d.kind === 'copy' ? 'copy' : 
 export type Confirmed = { contentId: string; destinationKey: string; masked: string };
 
 type State = {
+  revision: number;
+  resultRevision: number | null;
+  sessionId: number;
+  confirmationInvalidated: boolean;
   text: string;
   prefs: Prefs;
   ops: ManualOp[];
@@ -41,7 +46,7 @@ type Actions = {
   addOps: (ops: ManualOp[]) => void;
   undo: () => void;
   redoOp: () => void;
-  setResult: (r: State['result']) => void;
+  setResult: (r: State['result'], revision: number) => void;
   setAnalyzing: (v: boolean) => void;
   setError: (e: string | null) => void;
   select: (id: string | null) => void;
@@ -53,11 +58,16 @@ type Actions = {
   setNanoStatus: (s: NanoAvailability | null) => void;
   setNanoProgress: (p: number | null) => void;
   setNotice: (n: string | null) => void;
+  policyChanged: () => void;
   /** 「終了して削除」: 原文・対応表・手動操作・確認状態をすべて消す */
   reset: () => void;
 };
 
 const initial: State = {
+  revision: 0,
+  resultRevision: null,
+  sessionId: 0,
+  confirmationInvalidated: false,
   text: '',
   prefs: DEFAULT_PREFS,
   ops: [],
@@ -77,38 +87,54 @@ const initial: State = {
   notice: null,
 };
 
+const invalidate = (s: State) => ({
+  revision: s.revision + 1,
+  confirmed: null,
+  confirmationInvalidated: s.confirmationInvalidated || s.confirmed !== null,
+  analyzing: true,
+  error: null,
+});
+
 export const useStore = create<State & Actions>((set) => ({
   ...initial,
   // 本文が変われば手動操作の位置は意味を失うので消す
-  setText: (text) => set({ text, ops: [], groups: [], redo: [], selectedId: null }),
-  setPrefs: (patch) => set((s) => ({ prefs: { ...s.prefs, ...patch } })),
-  addOp: (op) => set((s) => ({ ops: [...s.ops, op], groups: [...s.groups, 1], redo: [] })),
-  addOps: (ops) => set((s) => (ops.length ? { ops: [...s.ops, ...ops], groups: [...s.groups, ops.length], redo: [] } : s)),
+  setText: (text) => set((s) => ({ ...invalidate(s), text, ops: [], groups: [], redo: [], selectedId: null })),
+  setPrefs: (patch) => set((s) => ({ ...invalidate(s), prefs: { ...s.prefs, ...patch } })),
+  addOp: (op) => set((s) => ({ ...invalidate(s), ops: [...s.ops, op], groups: [...s.groups, 1], redo: [] })),
+  addOps: (ops) => set((s) => (ops.length ? { ...invalidate(s), ops: [...s.ops, ...ops], groups: [...s.groups, ops.length], redo: [] } : s)),
   undo: () =>
     set((s) => {
       const size = s.groups.at(-1);
       if (!size) return s;
-      return { ops: s.ops.slice(0, -size), groups: s.groups.slice(0, -1), redo: [...s.redo, s.ops.slice(-size)] };
+      return { ...invalidate(s), ops: s.ops.slice(0, -size), groups: s.groups.slice(0, -1), redo: [...s.redo, s.ops.slice(-size)] };
     }),
   redoOp: () =>
     set((s) => {
       const group = s.redo.at(-1);
       if (!group) return s;
-      return { ops: [...s.ops, ...group], groups: [...s.groups, group.length], redo: s.redo.slice(0, -1) };
+      return { ...invalidate(s), ops: [...s.ops, ...group], groups: [...s.groups, group.length], redo: s.redo.slice(0, -1) };
     }),
-  setResult: (result) => set({ result }),
+  setResult: (result, revision) => set((s) => revision === s.revision ? { result, resultRevision: revision } : s),
   setAnalyzing: (analyzing) => set({ analyzing }),
-  setError: (error) => set({ error }),
+  setError: (error) => set((s) => ({ error, ...(error ? { confirmed: null, confirmationInvalidated: s.confirmationInvalidated || s.confirmed !== null } : {}) })),
   select: (selectedId) => set({ selectedId }),
-  confirm: (confirmed) => set({ confirmed }),
-  setDestination: (destination) => set({ destination }),
-  setAnswer: (id, a) => set((s) => ({ answers: { ...s.answers, [id]: a } })),
+  confirm: (confirmed) => set((s) => {
+    if (confirmed && (!canConfirm(s) || confirmed.contentId !== s.result?.contentId || confirmed.masked !== s.result.masked || confirmed.destinationKey !== destinationKey(s.destination))) return s;
+    return { confirmed, confirmationInvalidated: false };
+  }),
+  setDestination: (destination) => set((s) => ({ destination, confirmed: null, confirmationInvalidated: s.confirmationInvalidated || s.confirmed !== null })),
+  setAnswer: (id, a) => set((s) => ({ ...invalidate(s), answers: { ...s.answers, [id]: a } })),
   setConditions: (conditions) => set({ conditions }),
   setNerStatus: (nerStatus) => set({ nerStatus }),
   setNanoStatus: (nanoStatus) => set({ nanoStatus }),
   setNanoProgress: (nanoProgress) => set({ nanoProgress }),
   setNotice: (notice) => set({ notice }),
-  reset: () => set((s) => ({ ...initial, prefs: s.prefs, nerStatus: s.nerStatus, nanoStatus: s.nanoStatus })),
+  policyChanged: () => set((s) => ({ ...invalidate(s), notice: '組織ポリシーが更新されました' })),
+  reset: () => {
+    set((s) => ({ ...initial, revision: s.revision + 1, sessionId: s.sessionId + 1, prefs: s.prefs, nerStatus: s.nerStatus, nanoStatus: s.nanoStatus }));
+    clearAnalysisSession();
+    void clearPendingText();
+  },
 }));
 
 export function settingsFrom(prefs: Prefs, customTerms: Settings['customTerms']): Settings {
@@ -123,8 +149,15 @@ export function settingsFrom(prefs: Prefs, customTerms: Settings['customTerms'])
 }
 
 /** 出力してよいか。確認済みの版と、現在の版・送信先が一致し、止める理由がないときだけ */
-export function canOutput(s: Pick<State, 'result' | 'confirmed' | 'destination' | 'analyzing'>): boolean {
-  if (!s.result || !s.confirmed || s.analyzing) return false;
-  if (s.result.blockers.length > 0) return false;
-  return s.confirmed.contentId === s.result.contentId && s.confirmed.destinationKey === destinationKey(s.destination);
+export function canConfirm(s: State): boolean {
+  if (!s.result || s.analyzing || s.error || s.resultRevision !== s.revision || s.result.blockers.length > 0) return false;
+  const policy = s.result.policy;
+  if (policy.status === 'error') return false;
+  return !(s.destination.kind === 'insert' && policy.status === 'active' && policy.allowedOrigins !== undefined && !policy.allowedOrigins.includes(s.destination.origin));
+}
+
+export function canOutput(s: State): boolean {
+  if (!canConfirm(s) || !s.result || !s.confirmed) return false;
+  return s.confirmed.contentId === s.result.contentId && s.confirmed.masked === s.result.masked &&
+    s.confirmed.destinationKey === destinationKey(s.destination);
 }

@@ -4,7 +4,7 @@ import { MESSAGES } from '../../core/explain/messages';
 import { copyText } from '../../infra/clipboard';
 import { log } from '../../infra/logger';
 import { getActiveTab, insertToTab, requestSitePermission } from '../../infra/tabs';
-import { canOutput, destinationKey, useStore } from '../store';
+import { canConfirm, canOutput, destinationKey, useStore } from '../store';
 import { Icon } from './Icon';
 
 /** 出力（FR-22, FR-23）。確認した版と送信先が一致するときだけ、コピー・挿入できる */
@@ -14,14 +14,15 @@ export function OutputPanel() {
   const [message, setMessage] = useState<string | null>(null);
   if (!result || !result.text.trim()) return null;
 
-  const stale = confirmed !== null && (confirmed.contentId !== result.contentId || confirmed.destinationKey !== destinationKey(destination));
+  const stale = state.confirmationInvalidated || (confirmed !== null && (confirmed.contentId !== result.contentId || confirmed.destinationKey !== destinationKey(destination)));
   const ready = canOutput(state);
   const policy = result.policy;
   const originNotAllowed =
     destination.kind === 'insert' && policy.status === 'active' && policy.allowedOrigins !== undefined && !policy.allowedOrigins.includes(destination.origin);
-  const blocked = result.blockers.length > 0 || analyzing || originNotAllowed;
+  const blocked = !canConfirm(state);
 
   async function chooseInsert() {
+    const sessionId = useStore.getState().sessionId;
     setMessage(null);
     const tab = await getActiveTab();
     const site = siteForUrl(tab?.url) ?? undefined;
@@ -31,12 +32,15 @@ export function OutputPanel() {
       return setMessage('対応しているAIサイト（Gemini・ChatGPT・Claude）のタブを表示してから押してください。');
     }
     const granted = await requestSitePermission(site);
+    if (useStore.getState().sessionId !== sessionId) return;
     if (!granted) return setMessage('権限が許可されなかったため、コピーで貼り付けてください。');
     state.setDestination({ kind: 'insert', tabId: tab.id, origin: site.origin, siteId: site.id, siteName: site.name });
   }
 
   async function onOutput() {
-    if (!result || !ready) return;
+    const current = useStore.getState();
+    if (!current.result || !canOutput(current)) return;
+    const { result, destination } = current;
     if (destination.kind === 'copy') {
       const ok = await copyText(result.masked);
       setMessage(ok ? MESSAGES.copied : 'コピーできませんでした。');
@@ -46,7 +50,9 @@ export function OutputPanel() {
     const site = siteForUrl(destination.origin);
     if (!site) return;
     const tab = await getActiveTab();
-    if (!tab || tab.id !== destination.tabId) {
+    const latest = useStore.getState();
+    if (!canOutput(latest) || latest.revision !== current.revision || latest.confirmed !== current.confirmed || destinationKey(latest.destination) !== destinationKey(destination)) return;
+    if (!tab || tab.id !== destination.tabId || siteForUrl(tab.url)?.origin !== destination.origin) {
       setMessage('挿入先のタブが切り替わりました。挿入先を設定し直してください。');
       state.setDestination({ kind: 'copy' });
       return;

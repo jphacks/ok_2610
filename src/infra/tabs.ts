@@ -26,7 +26,7 @@ export function hasSitePermission(site: SiteInfo): Promise<boolean> {
 
 export async function insertToTab(tabId: number, site: SiteInfo, text: string): Promise<InsertOutcome> {
   try {
-    const [res] = await chrome.scripting.executeScript({ target: { tabId }, func: insertIntoAiInput, args: [site.id, text] });
+    const [res] = await chrome.scripting.executeScript({ target: { tabId }, func: insertIntoAiInput, args: [site.id, text, site.origin] });
     return (res?.result as InsertOutcome | undefined) ?? { ok: false, reason: '挿入の結果を受け取れませんでした。' };
   } catch {
     return { ok: false, reason: 'このタブに書き込む権限がありません。権限を許可するか、コピーで貼り付けてください。' };

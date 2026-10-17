@@ -80,10 +80,17 @@ export async function takePendingText(): Promise<string | undefined> {
   return undefined;
 }
 
-export function onPendingText(cb: (text: string) => void): () => void {
+export async function clearPendingText(): Promise<void> {
+  try {
+    await chrome.storage.session.remove('pendingText');
+  } catch { /* セッションストレージを利用できない場合は何もしない */ }
+}
+
+export function onPendingText(cb: (text: string) => void, sessionId: () => number): () => void {
   const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
     if (area === 'session' && typeof changes.pendingText?.newValue === 'string') {
-      void takePendingText().then((t) => t && cb(t));
+      const session = sessionId();
+      void takePendingText().then((t) => session === sessionId() && t && cb(t));
     }
   };
   chrome.storage.onChanged.addListener(listener);
