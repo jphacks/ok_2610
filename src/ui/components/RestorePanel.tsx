@@ -1,16 +1,28 @@
 import { useState } from 'react';
 import type { RestoreResult } from '../../core/restore';
 import { copyText } from '../../infra/clipboard';
-import { workerClient } from '../useAnalysis';
+import { workerClient } from '../../infra/analysis-session';
 import { useStore } from '../store';
 
 /** AIの回答の復元（ARCHITECTURE.md §11-3）。貼付け → 復元 → コピーのみ。AIサイトには挿入しない */
 export function RestorePanel() {
   const result = useStore((s) => s.result);
+  const current = useStore((s) => !s.analyzing && !s.error && s.resultRevision === s.revision);
   const [answer, setAnswer] = useState('');
   const [restored, setRestored] = useState<RestoreResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   if (!result || Object.keys(result.restoreMap).length === 0) return null;
+
+  async function restore() {
+    const before = useStore.getState();
+    if (!before.result || before.analyzing || before.error || before.resultRevision !== before.revision) return;
+    try {
+      const value = await workerClient().call('restore', { text: answer, restoreMap: before.result.restoreMap });
+      if (useStore.getState().revision === before.revision) setRestored(value);
+    } catch {
+      if (useStore.getState().revision === before.revision) setMessage('復元できませんでした。もう一度お試しください。');
+    }
+  }
 
   return (
     <section className="panel restore-panel" aria-labelledby="restore-title">
@@ -23,8 +35,8 @@ export function RestorePanel() {
         <textarea rows={5} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="AIの回答を貼り付け" aria-label="AIの回答" />
         <button
           type="button"
-          disabled={!answer.trim()}
-          onClick={async () => setRestored(await workerClient().call('restore', { text: answer, restoreMap: result.restoreMap }))}
+          disabled={!answer.trim() || !current}
+          onClick={() => void restore()}
         >
           ラベルを元の語に戻す
         </button>
@@ -37,6 +49,7 @@ export function RestorePanel() {
             {restored.unmatched.length > 0 && <p className="hint warn">戻せなかったラベル: {restored.unmatched.join('、')}（AIが書き換えた可能性があります）</p>}
             <button
               type="button"
+              disabled={!current}
               onClick={async () => setMessage((await copyText(restored.restored)) ? 'コピーしました。原文を含むので、外部のサービスには貼り付けないでください。' : 'コピーできませんでした。')}
             >
               コピー

@@ -18,6 +18,7 @@ export function App() {
   const error = useStore((s) => s.error);
   const hasText = useStore((s) => s.text.trim().length > 0);
   const result = useStore((s) => s.result);
+  const sessionId = useStore((s) => s.sessionId);
 
   return (
     <div className="app">
@@ -54,8 +55,8 @@ export function App() {
           </section>
         )}
         <ConditionsPanel />
-        <OutputPanel />
-        <RestorePanel />
+        <OutputPanel key={sessionId} />
+        <RestorePanel key={`${sessionId}:${result?.contentId ?? ''}`} />
       </main>
       <footer className="footer">
         <p>{MESSAGES.noGuarantee}</p>
