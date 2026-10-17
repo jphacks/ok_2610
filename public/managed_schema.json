@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "version": { "type": "string", "description": "ポリシーの版" },
+    "name": { "type": "string", "description": "ポリシーの名前（画面に表示）" },
+    "expiresAt": { "type": "string", "description": "有効期限（ISO 8601）。過ぎると出力を止める" },
+    "allowedOrigins": { "type": "array", "items": { "type": "string" }, "description": "挿入を許可するAIサイトのオリジン" },
+    "prohibitedCategories": { "type": "array", "items": { "type": "string" }, "description": "残してはいけない情報の種類" },
+    "minStage": { "type": "string", "description": "最低段階（A/B/C）" },
+    "minProfile": { "type": "array", "items": { "type": "string" }, "description": "必ず実行するエンジン（rule/ner/nano）" },
+    "lockedCategories": { "type": "array", "items": { "type": "string" }, "description": "利用者が解除できない情報の種類" },
+    "orgTerms": {
+      "type": "array",
+      "items": { "type": "object", "properties": { "term": { "type": "string" }, "label": { "type": "string" } } },
+      "description": "組織の辞書（外部に出さない語）"
+    },
+    "prohibitedPatterns": { "type": "array", "items": { "type": "string" }, "description": "禁止パターン（正規表現）" },
+    "requireConditions": { "type": "boolean", "description": "利用条件の確認を出力の必須条件にする" },
+    "contact": { "type": "string", "description": "相談先（画面に表示）" }
+  }
+}
