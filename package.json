@@ -2,7 +2,7 @@
   "name": "text-cleaner",
   "description": "生成AIに渡す前の文章から個人情報・機密情報を端末内で検出・加工し、判断を支援するChrome拡張",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "dev": "wxt",
