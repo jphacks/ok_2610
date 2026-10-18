@@ -35,7 +35,7 @@ export function RestorePanel() {
           <h2 id="restore-title">AIの回答を復元</h2>
           <span className="chip chip-muted">任意</span>
         </summary>
-        <p className="hint">「人物A」などのラベルや、「30代」などに一般化した語を元の語に戻します。元の語が1つに決まらない一般化と、削除した情報は戻せません。</p>
+        <p className="hint">「人物A」などのラベルや、「30代」などに一般化した語を元の語に戻します。加工後の文章のほかの所にも同じ語がある一般化と、削除した情報は戻せません。</p>
         <textarea rows={5} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="AIの回答を貼り付け" aria-label="AIの回答" />
         <button
           type="button"
