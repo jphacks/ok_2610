@@ -30,8 +30,8 @@ export function SettingsPanel() {
     <section className="panel settings-panel" aria-labelledby="settings-title">
       <div className="section-heading">
         <div>
-          <h2 id="settings-title">2. 用途と段階</h2>
-          <p className="hint">AIに頼む作業に合わせて、残す情報を選びます。</p>
+          <h2 id="settings-title">加工の設定</h2>
+          <p className="hint">用途と、残したい情報を選びます。</p>
         </div>
       </div>
 

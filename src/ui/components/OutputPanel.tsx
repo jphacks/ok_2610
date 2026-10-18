@@ -2,15 +2,17 @@ import { useState } from 'react';
 import { siteForUrl } from '../../adapters/sites';
 import { MESSAGES } from '../../core/explain/messages';
 import { copyText } from '../../infra/clipboard';
+import { saveFile } from '../../infra/download';
+import { exportSpreadsheet } from '../../infra/spreadsheet-export';
 import { log } from '../../infra/logger';
 import { getActiveTab, insertToTab, requestSitePermission } from '../../infra/tabs';
 import { canConfirm, canOutput, destinationKey, useStore } from '../store';
 import { Icon } from './Icon';
 
 /** 出力（FR-22, FR-23）。確認した版と送信先が一致するときだけ、コピー・挿入できる */
-export function OutputPanel() {
+export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { onConditions: () => void; showingOriginal: boolean; onShowMasked: () => void }) {
   const state = useStore();
-  const { result, confirmed, destination, conditions, analyzing } = state;
+  const { result, confirmed, destination, conditions, analyzing, source } = state;
   const [message, setMessage] = useState<string | null>(null);
   if (!result || !result.text.trim()) return null;
 
@@ -20,6 +22,8 @@ export function OutputPanel() {
   const originNotAllowed =
     destination.kind === 'insert' && policy.status === 'active' && policy.allowedOrigins !== undefined && !policy.allowedOrigins.includes(destination.origin);
   const blocked = !canConfirm(state);
+  const fileSource = source && result.text === source.text ? source : null;
+  const fileLabel = fileSource ? `元と同じ形式（.${fileSource.fileName.split('.').pop()?.toLowerCase()}）で保存` : '';
 
   async function chooseInsert() {
     const sessionId = useStore.getState().sessionId;
@@ -39,12 +43,26 @@ export function OutputPanel() {
 
   async function onOutput() {
     const current = useStore.getState();
-    if (!current.result || !canOutput(current)) return;
+    if (showingOriginal || !current.result || !canOutput(current)) return;
     const { result, destination } = current;
     if (destination.kind === 'copy') {
       const ok = await copyText(result.masked);
-      setMessage(ok ? MESSAGES.copied : 'コピーできませんでした。');
+      setMessage(ok ? 'コピーしました' : 'コピーできませんでした。');
       log('output', { copy: ok });
+      return;
+    }
+    if (destination.kind === 'file') {
+      const src = current.source;
+      if (!src || src.text !== result.text) return setMessage('読み込んだファイルの本文が変わったため、同じ形式では保存できません。');
+      try {
+        const out = exportSpreadsheet(src, result.segments);
+        saveFile(out.bytes, out.fileName, out.mimeType);
+        setMessage([`確認した加工文を「${out.fileName}」として保存しました。保存先の扱いにご注意ください。`, ...out.notes].join('\n'));
+        log('output', { file: true });
+      } catch {
+        setMessage('ファイルを書き出せませんでした。コピーをお使いください。');
+        log('output', { file: false });
+      }
       return;
     }
     const site = siteForUrl(destination.origin);
@@ -65,38 +83,50 @@ export function OutputPanel() {
   const site = destination.kind === 'insert' ? siteForUrl(destination.origin) : undefined;
 
   return (
-    <section className="panel output-panel" aria-labelledby="output-title">
-      <div className="section-heading">
-        <div>
-          <h2 id="output-title">4. 出力</h2>
-          <p className="hint">内容を確認してから、AIで使う文章をコピーします。</p>
-        </div>
+    <section className="output-panel" aria-labelledby="output-title">
+      <div className="output-heading">
+        <h3 id="output-title">確認して使う</h3>
         <span className={`chip chip-${ready ? 'ok' : blocked ? 'danger' : 'muted'}`}>{ready ? '確認済み' : analyzing ? '解析中' : blocked ? '出力停止中' : '未確認'}</span>
       </div>
-      <fieldset className="field destination-options">
-        <legend>出力先</legend>
-        <label className="check-line">
-          <input type="radio" name="dest" checked={destination.kind === 'copy'} onChange={() => state.setDestination({ kind: 'copy' })} />
-          クリップボードにコピー
-        </label>
-        <label className="check-line">
-          <input type="radio" name="dest" checked={destination.kind === 'insert'} onChange={() => void chooseInsert()} />
-          表示中のAIサイトの入力欄に挿入
-        </label>
-        {destination.kind === 'insert' && site && (
-          <p className="hint">
-            挿入先: {site.name}（{new URL(site.origin).host}）の入力欄。送信ボタンは押しません。
-            {site.verifiedAt ? `動作確認日 ${site.verifiedAt}。` : 'このサイトでの挿入は未確認です。失敗したらコピーをお使いください。'}
-            未対応: {site.unsupported.join('・')}
-          </p>
-        )}
-        {originNotAllowed && <p className="hint warn">組織ポリシーで許可されていないサイトです。</p>}
-      </fieldset>
+      <details className="destination-details">
+        <summary aria-label="出力先を変更"><span>出力先</span> {destination.kind === 'copy' ? 'クリップボード' : destination.kind === 'file' ? 'ファイル保存' : destination.siteName + ' の入力欄'}<span className="destination-change">変更</span></summary>
+        <fieldset className="field destination-options">
+          <legend>出力先</legend>
+          <label className="check-line">
+            <input type="radio" name="dest" checked={destination.kind === 'copy'} onChange={() => state.setDestination({ kind: 'copy' })} />
+            クリップボードにコピー
+          </label>
+          <label className="check-line">
+            <input type="radio" name="dest" checked={destination.kind === 'insert'} onChange={() => void chooseInsert()} />
+            表示中のAIサイトの入力欄に挿入
+          </label>
+          {fileSource && (
+            <label className="check-line">
+              <input type="radio" name="dest" checked={destination.kind === 'file'} onChange={() => state.setDestination({ kind: 'file' })} />
+              {fileLabel}
+            </label>
+          )}
+          {destination.kind === 'file' && fileSource && (
+            <p className="hint">
+              加工した値のセルだけを書き換え、書式・列幅・シート構成は元のまま残します。画像・コメント・グラフ・作成者などの情報は検査していないため取り除きます。
+            </p>
+          )}
+          {destination.kind === 'insert' && site && (
+            <p className="hint">
+              挿入先: {site.name}（{new URL(site.origin).host}）の入力欄。送信ボタンは押しません。
+              {site.verifiedAt ? `動作確認日 ${site.verifiedAt}。` : 'このサイトでの挿入は未確認です。失敗したらコピーをお使いください。'}
+              未対応: {site.unsupported.join('・')}
+            </p>
+          )}
+        </fieldset>
+      </details>
+      {originNotAllowed && <p className="hint warn">組織ポリシーで許可されていないサイトです。</p>}
 
       {(conditions.status === 'unknown' || conditions.status === 'restricted') && (
         <div className="callout warn">
           <strong>{MESSAGES.unresolved}</strong>
-          <p>利用条件に分からない点・制約があります。確認が済むまで送信を控えることをおすすめします。</p>
+          <p>利用条件を確認するまで、送信を控えてください。</p>
+          <button type="button" onClick={onConditions}>利用条件を確認</button>
           <button
             type="button"
             className="primary"
@@ -110,30 +140,26 @@ export function OutputPanel() {
         </div>
       )}
 
-      <div className="output-preview" aria-label="出力される文章">
-        {result.masked}
-      </div>
+      {showingOriginal && <p className="hint warn">原文を表示中です。<button type="button" className="link" onClick={onShowMasked}>加工後に戻って確認</button></p>}
       <div className="output-actions">
         <button
           type="button"
-          className={ready ? 'confirmed-button' : 'primary'}
-          disabled={blocked}
+          aria-label={MESSAGES.confirmButton}
+          className={ready ? 'confirmed-button' : 'primary confirm-button'}
+          disabled={blocked || showingOriginal}
           onClick={() => state.confirm({ contentId: result.contentId, destinationKey: destinationKey(destination), masked: result.masked })}
         >
           <Icon name="check" />
-          {MESSAGES.confirmButton}
+          {ready ? '確認済み' : '内容を確認'}
         </button>
         <Icon name="arrow" className="action-arrow" />
-        <button type="button" className={ready ? 'primary' : ''} disabled={!ready} onClick={() => void onOutput()}>
-          <Icon name={destination.kind === 'copy' ? 'copy' : 'arrow'} />
-          {destination.kind === 'copy' ? MESSAGES.outputCopy : MESSAGES.outputInsert}
+        <button type="button" className={ready ? 'primary' : ''} aria-label={destination.kind === 'copy' ? MESSAGES.outputCopy : destination.kind === 'file' ? '確認した加工文をファイルに保存' : MESSAGES.outputInsert} disabled={!ready || showingOriginal} onClick={() => void onOutput()}>
+          <Icon name={destination.kind === 'copy' ? 'copy' : destination.kind === 'file' ? 'file' : 'arrow'} />
+          {destination.kind === 'copy' ? 'コピー' : destination.kind === 'file' ? 'ファイルに保存' : '入力欄に挿入'}
         </button>
       </div>
       {stale && <p className="hint warn">{MESSAGES.invalidated}</p>}
-      {ready && <p className="hint">{MESSAGES.confirmed}</p>}
-      {!ready && !blocked && !stale && <p className="hint">加工文を確認すると、コピー・挿入できるようになります。</p>}
-      {message && <p className="hint" role="status">{message}</p>}
-      <p className="hint">{MESSAGES.clipboardNote}</p>
+      {message && <p className="hint pre-line" role="status">{message}</p>}
     </section>
   );
 }
