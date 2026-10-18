@@ -9,15 +9,13 @@ import { getActiveTab, insertToTab, requestSitePermission } from '../../infra/ta
 import { canConfirm, canOutput, destinationKey, useStore } from '../store';
 import { Icon } from './Icon';
 
-/** 出力（FR-22, FR-23）。確認した版と送信先が一致するときだけ、コピー・挿入できる */
+/** 出力（FR-22, FR-23）。押した時点の版と送信先を確認済みにし、その版だけをコピー・挿入・保存する */
 export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { onConditions: () => void; showingOriginal: boolean; onShowMasked: () => void }) {
   const state = useStore();
-  const { result, confirmed, destination, conditions, analyzing, source } = state;
+  const { result, destination, conditions, source } = state;
   const [message, setMessage] = useState<string | null>(null);
   if (!result || !result.text.trim()) return null;
 
-  const stale = state.confirmationInvalidated || (confirmed !== null && (confirmed.contentId !== result.contentId || confirmed.destinationKey !== destinationKey(destination)));
-  const ready = canOutput(state);
   const policy = result.policy;
   const originNotAllowed =
     destination.kind === 'insert' && policy.status === 'active' && policy.allowedOrigins !== undefined && !policy.allowedOrigins.includes(destination.origin);
@@ -42,8 +40,12 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
   }
 
   async function onOutput() {
+    const before = useStore.getState();
+    if (showingOriginal || !before.result || !canConfirm(before)) return;
+    // 確認と出力を1回の操作にまとめる。押した時点で表示中の版と送信先を確認済みにしてから出す
+    before.confirm({ contentId: before.result.contentId, destinationKey: destinationKey(before.destination), masked: before.result.masked });
     const current = useStore.getState();
-    if (showingOriginal || !current.result || !canOutput(current)) return;
+    if (!current.result || !canOutput(current)) return;
     const { result, destination } = current;
     if (destination.kind === 'copy') {
       const ok = await copyText(result.masked);
@@ -57,7 +59,7 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
       try {
         const out = exportSpreadsheet(src, result.segments);
         saveFile(out.bytes, out.fileName, out.mimeType);
-        setMessage([`確認した加工文を「${out.fileName}」として保存しました。保存先の扱いにご注意ください。`, ...out.notes].join('\n'));
+        setMessage([`加工文を「${out.fileName}」として保存しました。保存先の扱いにご注意ください。`, ...out.notes].join('\n'));
         log('output', { file: true });
       } catch {
         setMessage('ファイルを書き出せませんでした。コピーをお使いください。');
@@ -84,10 +86,7 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
 
   return (
     <section className="output-panel" aria-labelledby="output-title">
-      <div className="output-heading">
-        <h3 id="output-title">確認して使う</h3>
-        <span className={`chip chip-${ready ? 'ok' : blocked ? 'danger' : 'muted'}`}>{ready ? '確認済み' : analyzing ? '解析中' : blocked ? '出力停止中' : '未確認'}</span>
-      </div>
+      <h3 id="output-title" className="visually-hidden">出力</h3>
       <details className="destination-details">
         <summary aria-label="出力先を変更"><span>出力先</span> {destination.kind === 'copy' ? 'クリップボード' : destination.kind === 'file' ? 'ファイル保存' : destination.siteName + ' の入力欄'}<span className="destination-change">変更</span></summary>
         <fieldset className="field destination-options">
@@ -142,23 +141,11 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
 
       {showingOriginal && <p className="hint warn">原文を表示中です。<button type="button" className="link" onClick={onShowMasked}>加工後に戻って確認</button></p>}
       <div className="output-actions">
-        <button
-          type="button"
-          aria-label={MESSAGES.confirmButton}
-          className={ready ? 'confirmed-button' : 'primary confirm-button'}
-          disabled={blocked || showingOriginal}
-          onClick={() => state.confirm({ contentId: result.contentId, destinationKey: destinationKey(destination), masked: result.masked })}
-        >
-          <Icon name="check" />
-          {ready ? '確認済み' : '内容を確認'}
-        </button>
-        <Icon name="arrow" className="action-arrow" />
-        <button type="button" className={ready ? 'primary' : ''} aria-label={destination.kind === 'copy' ? MESSAGES.outputCopy : destination.kind === 'file' ? '確認した加工文をファイルに保存' : MESSAGES.outputInsert} disabled={!ready || showingOriginal} onClick={() => void onOutput()}>
+        <button type="button" className="primary" aria-label={destination.kind === 'copy' ? MESSAGES.outputCopy : destination.kind === 'file' ? MESSAGES.outputFile : MESSAGES.outputInsert} disabled={blocked || showingOriginal} onClick={() => void onOutput()}>
           <Icon name={destination.kind === 'copy' ? 'copy' : destination.kind === 'file' ? 'file' : 'arrow'} />
           {destination.kind === 'copy' ? 'コピー' : destination.kind === 'file' ? 'ファイルに保存' : '入力欄に挿入'}
         </button>
       </div>
-      {stale && <p className="hint warn">{MESSAGES.invalidated}</p>}
       {message && <p className="hint pre-line" role="status">{message}</p>}
     </section>
   );

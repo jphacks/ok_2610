@@ -1,6 +1,6 @@
 /*
  * 配色は「墨と藍」。書類に朱を入れるのではなく、藍の判で置き換えた箇所を示す。
- * 紙（bg）・用紙（surface）・墨（text）・藍（accent）・黄檗（残した候補）・朱（止める操作）。
+ * 紙（bg）・用紙（surface）・墨（text）・藍（accent・自動で加工）・緑青（手動で直した箇所）・黄檗（残した候補）・朱（止める操作）。
  */
 :root {
   --bg: #eef1f0;
@@ -24,6 +24,9 @@
   --changed-border: #24497a;
   --kept: #f4e9c2;
   --kept-border: #9c7a12;
+  --manual: #dcefe8;
+  --manual-text: #1d5145;
+  --manual-border: #2f7564;
   --focus: #24497a;
   --radius: 12px;
   color-scheme: light;
@@ -52,6 +55,9 @@
     --changed-border: #8aa6d8;
     --kept: #383120;
     --kept-border: #cdb25c;
+    --manual: #1d3732;
+    --manual-text: #c3e6dc;
+    --manual-border: #7cc3b1;
     --focus: #9fb7e2;
     color-scheme: dark;
   }
@@ -226,7 +232,8 @@ button.link { min-height: auto; padding: 0 4px; color: var(--accent); background
 /* 置き換えた箇所は藍の判のように濃く示す。画面でいちばん目立たせる要素なので、ほかの装飾は控えめにする。 */
 .mark.changed { background: var(--changed); border-color: var(--changed-border); color: var(--changed-text); font-weight: 600; }
 .mark.kept { background: var(--kept); border-color: var(--kept-border); border-bottom-style: dashed; }
-.mark.manual { border-bottom-style: double; border-bottom-width: 3px; }
+/* 手動で直した箇所は、自動の藍と見分けられるよう緑青にし、二重線も付ける（色だけに頼らない） */
+.mark.manual { background: var(--manual); color: var(--manual-text); border-color: var(--manual-border); border-bottom-style: double; border-bottom-width: 3px; }
 .sheet-preview { display: grid; gap: 6px; min-width: 0; }
 .sheet-tabs { display: flex; gap: 4px; overflow-x: auto; }
 .sheet-tab { font-size: 12px; padding: 3px 10px; min-height: 28px; border-radius: 6px 6px 0 0; background: var(--surface-subtle); color: var(--muted); white-space: nowrap; }
@@ -265,9 +272,7 @@ details[open].sub > summary { margin-bottom: 16px; }
 .output-preview { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--border); border-radius: 8px; padding: 14px; max-height: 180px; overflow: auto; overscroll-behavior: contain; font-size: 13px; line-height: 1.9; background: var(--surface-subtle); }
 .output-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .output-actions button { flex: 1; min-height: 44px; font-size: 13px; }
-.output-actions button:last-child { flex: 1.25; }
-.action-arrow { display: none; }
-button.confirmed-button { color: var(--ok); border-color: var(--border); background: var(--ok-soft); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .restore-panel textarea { margin: 14px 0 10px; }
 .restore-panel .output-preview { margin-top: 14px; }
 
@@ -293,8 +298,6 @@ button.icon-button { padding: 8px; width: 36px; height: 36px; min-height: 36px; 
 .legend { gap: 4px; font-size: 10px; }
 .inspection-details { color: var(--muted); font-size: 11px; margin: 12px 0; }
 .output-panel { position: sticky; bottom: 0; z-index: 2; margin: 16px -16px 0; padding: 12px 16px 14px; background: var(--surface); border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); box-shadow: 0 -8px 20px rgb(0 0 0 / 2%); }
-.output-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.output-heading h3 { font-size: 12px; font-weight: 500; color: var(--muted); margin: 0; }
 .destination-details { font-size: 12px; }
 .destination-details > summary { display: flex; align-items: center; gap: 8px; min-height: 30px; list-style: none; }
 .destination-details > summary::-webkit-details-marker { display: none; }
