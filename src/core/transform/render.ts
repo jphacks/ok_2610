@@ -6,7 +6,7 @@ import { generalize } from './generalize';
 export type RenderResult = {
   masked: string;
   segments: OutputSegment[];
-  /** ラベル → 原文（復元用）。一般化・削除したものは含めない */
+  /** ラベル → 原文（復元用）。元の語が複数ある一般化に付けたラベルも含む。削除したものは含めない */
   restoreMap: Record<string, string>;
   /** 一般化した語 → 原文（復元用）。元の語が1つに決まり、加工後の文章でほかに現れない語だけ */
   generalizedMap: Record<string, string>;
@@ -41,6 +41,10 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
   const outputs = new Map<string, string>();
   /** 一般化した語 → 原文の候補と出現数 */
   const generalized = new Map<string, { originals: Set<string>; count: number }>();
+  /** 一般化した候補。元の語が複数ある一般化を、後でラベルに置き換えるために残す */
+  const generalizedCandidates: { id: string; category: Candidate['categories'][number]; text: string; out: string; entityId?: string }[] = [];
+  /** 分類と原文 → 出力に使ったラベル。区別したラベルを付けるとき、同じ原文には同じラベルを使う */
+  const labelByOriginal = new Map<string, string>();
 
   const sorted = [...candidates].sort((a, b) => a.start - b.start);
   for (const c of sorted) {
@@ -66,11 +70,13 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
           out = entity.label;
           // 出力に現れるラベルだけを対応表に入れる。一般化で消えた対象のラベルをAIが偶然書いても、原文を戻さない
           restoreMap[out] = entity.canonical;
+          labelByOriginal.set(`${category}|${mentionKey(c.text)}`, out);
         } else {
           const key = `${category}|${mentionKey(c.text)}`;
           out = pseudonyms.get(key) ?? allocate(info.pseudonymPrefix ?? categoryLabel(category), (p, n) => `${p}${letterLabel(n)}`);
           pseudonyms.set(key, out);
           restoreMap[out] = c.text;
+          labelByOriginal.set(key, out);
         }
         break;
       }
@@ -83,6 +89,7 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
             entry.originals.add(c.text);
             entry.count++;
             generalized.set(g, entry);
+            generalizedCandidates.push({ id: c.id, category, text: c.text, out: g, entityId: c.entityId });
           }
           break;
         }
@@ -106,6 +113,32 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
     return out;
   }
 
+  // 元の語が複数ある一般化は、戻す先が決まるよう元の語ごとに区別したラベルにする。
+  // 「ある部署」のように中身のない語は分類名で「部署A」「部署B」、「30代」のように意味のある語は「30代A」「30代B」
+  for (const [g, { originals }] of generalized) {
+    if (new Set([...originals].map(mentionKey)).size < 2) continue;
+    generalized.delete(g);
+    for (const gc of generalizedCandidates) {
+      if (gc.out !== g) continue;
+      const key = `${gc.category}|${mentionKey(gc.text)}`;
+      let label = labelByOriginal.get(key);
+      // 同一対象として束ねた語は、その対象のラベルを使う（表記ゆれも同じラベルになる）
+      const entity = gc.entityId ? entityById.get(gc.entityId) : undefined;
+      if (label === undefined && entity) {
+        label = entity.label;
+        labelByOriginal.set(key, label);
+        restoreMap[label] = entity.canonical;
+      }
+      if (label === undefined) {
+        const prefix = g.startsWith('ある') ? (CATEGORY_INFO[gc.category].pseudonymPrefix ?? categoryLabel(gc.category)) : g;
+        label = allocate(prefix, (p, n) => `${p}${letterLabel(n)}`);
+        labelByOriginal.set(key, label);
+        restoreMap[label] = gc.text;
+      }
+      outputs.set(gc.id, label);
+    }
+  }
+
   const segments: OutputSegment[] = [];
   let masked = '';
   let cursor = 0;
@@ -125,7 +158,7 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
     segments.push({ kind: 'plain', text: plain });
     masked += plain;
   }
-  // 複数の語が同じ語に一般化された、または同じ語が加工後の文章のほかの所にもある場合は、戻す先が決まらないので入れない
+  // 同じ語が加工後の文章のほかの所にもある場合は、戻す先が決まらないので入れない
   const generalizedMap: Record<string, string> = {};
   for (const [g, { originals, count }] of generalized) {
     const [original] = originals;
