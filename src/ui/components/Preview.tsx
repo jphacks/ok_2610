@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ALL_CATEGORIES, categoryLabel } from '../../core/model/categories';
 import type { Category } from '../../core/model/types';
 import { Icon } from './Icon';
+import { SheetPreview } from './SheetPreview';
 import { useStore } from '../store';
 
 /** 原文の中での選択範囲を、data-start を手がかりに文字位置へ戻す */
@@ -30,11 +31,14 @@ export function Preview({ mode, onMode }: { mode: 'masked' | 'original'; onMode:
   const select = useStore((s) => s.select);
   const addOp = useStore((s) => s.addOp);
   const { ops, redo, undo, redoOp } = useStore();
+  const source = useStore((s) => s.source);
   const [pending, setPending] = useState<{ start: number; end: number } | null>(null);
   const [category, setCategory] = useState<Category>('custom');
   if (!result || !result.text.trim()) return null;
 
   const byId = new Map(result.candidates.map((c) => [c.id, c]));
+  // 読み込んだ Excel・CSV は、文章に直さずシートの表として描く
+  const sheetSource = source && source.text === result.text ? source : null;
 
   const originalChunks: { start: number; text: string; id?: string }[] = [];
   let cursor = 0;
@@ -62,7 +66,9 @@ export function Preview({ mode, onMode }: { mode: 'masked' | 'original'; onMode:
         </div>
       </div>
 
-      {mode === 'masked' ? (
+      {sheetSource ? (
+        <SheetPreview mode={mode} source={sheetSource} segments={result.segments} candidates={result.candidates} onMouseUp={() => setPending(selectionOffsets())} />
+      ) : mode === 'masked' ? (
         <div className="doc" aria-label="加工後の文章">
           {result.segments.map((seg, i) =>
             seg.kind === 'plain' ? (
@@ -81,25 +87,27 @@ export function Preview({ mode, onMode }: { mode: 'masked' | 'original'; onMode:
           )}
         </div>
       ) : (
+        <div className="doc original" aria-label="原文" onMouseUp={() => setPending(selectionOffsets())}>
+          {originalChunks.map((ch) =>
+            ch.id ? (
+              <span
+                key={ch.start}
+                data-start={ch.start}
+                className={`mark ${byId.get(ch.id)?.output === ch.text ? 'kept' : 'changed'} ${selectedId === ch.id ? 'selected' : ''}`}
+                onClick={() => select(ch.id ?? null)}
+              >
+                {ch.text}
+              </span>
+            ) : (
+              <span key={ch.start} data-start={ch.start}>
+                {ch.text}
+              </span>
+            ),
+          )}
+        </div>
+      )}
+      {mode === 'original' && (
         <>
-          <div className="doc original" aria-label="原文" onMouseUp={() => setPending(selectionOffsets())}>
-            {originalChunks.map((ch) =>
-              ch.id ? (
-                <span
-                  key={ch.start}
-                  data-start={ch.start}
-                  className={`mark ${byId.get(ch.id)?.output === ch.text ? 'kept' : 'changed'} ${selectedId === ch.id ? 'selected' : ''}`}
-                  onClick={() => select(ch.id ?? null)}
-                >
-                  {ch.text}
-                </span>
-              ) : (
-                <span key={ch.start} data-start={ch.start}>
-                  {ch.text}
-                </span>
-              ),
-            )}
-          </div>
           {pending ? (
             <div className="row">
               <span className="hint">「{result.text.slice(pending.start, pending.end).slice(0, 20)}」を</span>
