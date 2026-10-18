@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ALL_CATEGORIES, categoryLabel } from '../../core/model/categories';
 import type { Category } from '../../core/model/types';
+import { Icon } from './Icon';
 import { useStore } from '../store';
 
 /** 原文の中での選択範囲を、data-start を手がかりに文字位置へ戻す */
@@ -23,12 +24,12 @@ function selectionOffsets(): { start: number; end: number } | null {
  * 比較プレビュー（FR-20）。加工後の文章は、コピー・挿入される内容と同じ文字列から描く。
  * 原文はこの拡張の画面の中だけに表示する。
  */
-export function Preview() {
+export function Preview({ mode, onMode }: { mode: 'masked' | 'original'; onMode: (mode: 'masked' | 'original') => void }) {
   const result = useStore((s) => s.result);
   const selectedId = useStore((s) => s.selectedId);
   const select = useStore((s) => s.select);
   const addOp = useStore((s) => s.addOp);
-  const [mode, setMode] = useState<'masked' | 'original'>('masked');
+  const { ops, redo, undo, redoOp } = useStore();
   const [pending, setPending] = useState<{ start: number; end: number } | null>(null);
   const [category, setCategory] = useState<Category>('custom');
   if (!result || !result.text.trim()) return null;
@@ -47,14 +48,17 @@ export function Preview() {
   return (
     <div className="card preview-card">
       <div className="row between">
-        <h3>プレビュー</h3>
         <div className="segmented small" role="group" aria-label="プレビューの切替">
-          <button type="button" aria-pressed={mode === 'masked'} className={mode === 'masked' ? 'on' : ''} onClick={() => setMode('masked')}>
+          <button type="button" aria-pressed={mode === 'masked'} className={mode === 'masked' ? 'on' : ''} onClick={() => onMode('masked')}>
             加工後
           </button>
-          <button type="button" aria-pressed={mode === 'original'} className={mode === 'original' ? 'on' : ''} onClick={() => setMode('original')}>
+          <button type="button" aria-pressed={mode === 'original'} className={mode === 'original' ? 'on' : ''} onClick={() => onMode('original')}>
             原文
           </button>
+        </div>
+        <div className="history-actions">
+          <button type="button" className="icon-button ghost" onClick={undo} disabled={!ops.length} aria-label="操作を元に戻す" title="操作を元に戻す"><Icon name="undo" /></button>
+          <button type="button" className="icon-button ghost" onClick={redoOp} disabled={!redo.length} aria-label="操作をやり直す" title="操作をやり直す"><Icon name="redo" /></button>
         </div>
       </div>
 
@@ -123,7 +127,7 @@ export function Preview() {
         </>
       )}
       <p className="hint legend">
-        <span className="mark changed">加工</span> <span className="mark kept">残した候補</span> <span className="mark changed manual">手動</span> 押すと理由を表示します。
+        <span className="mark changed">加工</span> <span className="mark kept">残した候補</span> <span className="mark changed manual">手動</span> 色付きの箇所から修正できます。
       </p>
     </div>
   );

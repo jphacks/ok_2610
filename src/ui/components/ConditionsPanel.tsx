@@ -5,7 +5,7 @@ import { useStore } from '../store';
 const ANSWER_LABEL: Record<Answer, string> = { yes: 'はい', no: 'いいえ', unknown: '分からない' };
 
 /** 利用条件の確認（FR-16, UC-02）。回答は自己申告。「不明」を許可に変えない */
-export function ConditionsPanel() {
+export function ConditionsPanel({ expanded = false }: { expanded?: boolean }) {
   const answers = useStore((s) => s.answers);
   const setAnswer = useStore((s) => s.setAnswer);
   const conditions = useStore((s) => s.conditions);
@@ -22,9 +22,9 @@ export function ConditionsPanel() {
 
   return (
     <section className="panel conditions-panel" aria-labelledby="cond-title">
-      <details open={conditions.status === 'restricted' || conditions.status === 'unknown'}>
+      <details open={expanded || conditions.status === 'restricted' || conditions.status === 'unknown'}>
         <summary>
-          <h2 id="cond-title">3. 利用条件の確認</h2>
+          <h2 id="cond-title">利用条件の確認</h2>
           <span className={`chip chip-${status.tone}`}>{conditions.status === 'unanswered' ? '未回答' : conditions.status === 'selfDeclaredOk' ? '回答済み' : '要確認'}</span>
         </summary>
         <p className="hint">ツールは利用の可否を判定しません。分からない項目は確認先を一覧にします。</p>

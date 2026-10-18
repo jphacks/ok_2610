@@ -28,10 +28,10 @@ export function RestorePanel() {
     <section className="panel restore-panel" aria-labelledby="restore-title">
       <details>
         <summary>
-          <h2 id="restore-title">5. AIの回答を元に戻す</h2>
-          <span className="chip chip-muted">AIを使ったあとに</span>
+          <h2 id="restore-title">AIの回答を復元</h2>
+          <span className="chip chip-muted">任意</span>
         </summary>
-        <p className="hint">AIの回答を貼り付けると、「人物A」などの仮ラベルを元の語に戻します。対応表はこの画面の外に出しません。年代などに一般化した情報は戻りません。</p>
+        <p className="hint">「人物A」などのラベルを元の語に戻します。一般化した情報は戻せません。</p>
         <textarea rows={5} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="AIの回答を貼り付け" aria-label="AIの回答" />
         <button
           type="button"
