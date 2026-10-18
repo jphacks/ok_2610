@@ -221,7 +221,8 @@ export async function analyze(input: AnalyzeInput): Promise<AnalysisResult> {
   const nanoRoles = new Map<string, Role>();
   for (const id of ['ner', 'nano'] as const) {
     const out = engineOutputs.find((o) => o.engine === id);
-    if (!profile.includes(id)) {
+    // 空の文章では Worker がエンジンを呼ばないので、失敗ではなく未実行として扱う
+    if (!profile.includes(id) || !text.trim()) {
       engines.push({ engine: id, status: 'skipped', ms: 0, spanCount: 0 });
       continue;
     }

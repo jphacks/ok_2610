@@ -2,6 +2,7 @@ import { useRef, useState, type DragEvent } from 'react';
 import { ACCEPTED_EXTENSIONS, readSpreadsheetFile, SpreadsheetError } from '../../infra/spreadsheet';
 import { getActiveTab, importSelection } from '../../infra/tabs';
 import { useStore } from '../store';
+import { ConfirmDialog } from './ConfirmDialog';
 import { Icon } from './Icon';
 
 export function InputPanel() {
@@ -11,6 +12,7 @@ export function InputPanel() {
   const reset = useStore((s) => s.reset);
   const [message, setMessage] = useState<string | null>(null);
   const [fileNotes, setFileNotes] = useState<string[]>([]);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   async function onImport() {
@@ -93,10 +95,18 @@ export function InputPanel() {
           aria-label="読み込む Excel・CSV ファイル"
           onChange={(e) => void onFile(e.target.files?.[0])}
         />
-        <button type="button" className="ghost clear-button" onClick={onReset} disabled={!text}>
-          終了して削除
+        <button type="button" className="ghost clear-button" onClick={() => setConfirmOpen(true)} disabled={!text}>
+          削除
         </button>
       </div>
+      <ConfirmDialog
+        open={confirmOpen}
+        title="文章を削除しますか？"
+        body="入力した文章、加工結果、復元した回答をこの画面から消します。元に戻せません。"
+        confirmLabel="削除する"
+        onConfirm={onReset}
+        onClose={() => setConfirmOpen(false)}
+      />
       {message && <p className="hint warn">{message}</p>}
       {fileNotes.length > 0 && (
         <ul className="hint file-notes" aria-label="ファイルの取込結果">

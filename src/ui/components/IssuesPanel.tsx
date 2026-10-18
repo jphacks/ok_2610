@@ -6,11 +6,13 @@ const ENGINE_NAME = { rule: '規則', ner: 'NER', nano: 'Gemini Nano' } as const
 /** 停止理由は常時表示し、正常な検査ログだけを折りたたむ。 */
 export function IssuesPanel({ onSettings }: { onSettings: (section?: SettingsSection) => void }) {
   const result = useStore((s) => s.result);
+  // 入力直後は前の文章（空の文章を含む）の結果が残っているので、検査が追いつくまで停止理由を出さない
+  const fresh = useStore((s) => !s.analyzing && s.resultRevision === s.revision);
   if (!result) return null;
   const nonBlockingRecheck = result.recheck.filter((f) => !f.blocking);
   return (
     <div className="issues-panel">
-      {result.blockers.length > 0 && (
+      {fresh && result.blockers.length > 0 && (
         <div className="callout danger" role="alert">
           <strong>出力を止めています</strong>
           <ul>{result.blockers.map((b) => <li key={b.message}>{b.message}</li>)}</ul>

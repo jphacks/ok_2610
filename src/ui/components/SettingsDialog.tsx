@@ -1,4 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { MESSAGES } from '../../core/explain/messages';
 import { ConditionsPanel } from './ConditionsPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { Icon } from './Icon';
@@ -37,7 +38,7 @@ export function SettingsDialog({ open, section, onSection, onClose }: {
   return (
     <dialog ref={ref} className="settings-dialog" aria-labelledby="settings-dialog-title" onCancel={onClose} onClose={onClose} onKeyDown={keepFocus}>
       <div className="settings-header">
-        <div><span className="eyebrow">PREFERENCES</span><h2 id="settings-dialog-title">設定</h2></div>
+        <h2 id="settings-dialog-title">設定</h2>
         <button type="button" className="icon-button ghost" onClick={onClose} aria-label="設定を閉じる" autoFocus><Icon name="close" /></button>
       </div>
       <nav className="settings-tabs" aria-label="設定の種類">
@@ -47,6 +48,11 @@ export function SettingsDialog({ open, section, onSection, onClose }: {
       <div className="settings-content">
         <div hidden={section !== 'preferences'}><SettingsPanel /></div>
         <div hidden={section !== 'conditions'}><ConditionsPanel expanded /></div>
+        {/* 限界の明示（FR-09, FR-17）は作業画面から外し、ここで読めるようにする */}
+        <details className="data-notes">
+          <summary>データの扱いと注意点</summary>
+          <ul>{[MESSAGES.sessionScope, MESSAGES.clipboardNote, MESSAGES.noGuarantee, MESSAGES.externalNotChecked].map((m) => <li key={m}>{m}</li>)}</ul>
+        </details>
       </div>
       <div className="settings-bottom"><span className="hint">変更は自動で反映されます</span><button type="button" className="primary" onClick={onClose}>文章に戻る</button></div>
     </dialog>
