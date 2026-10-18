@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent } from 'react';
-import { ACCEPTED_EXTENSIONS, readSpreadsheetFile, SpreadsheetError } from '../../infra/spreadsheet';
+import { ACCEPTED_EXTENSIONS, readSpreadsheetFile, SpreadsheetError, type SpreadsheetSource } from '../../infra/spreadsheet';
 import { getActiveTab, importSelection } from '../../infra/tabs';
 import { useStore } from '../store';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -9,6 +9,9 @@ export function InputPanel() {
   const text = useStore((s) => s.text);
   const setText = useStore((s) => s.setText);
   const importFile = useStore((s) => s.importFile);
+  const source = useStore((s) => s.source);
+  // 読み込んだ Excel・CSV は、文章に直したものを見せず、ファイルとして扱う
+  const fileSource = source && source.text === text ? source : null;
   const reset = useStore((s) => s.reset);
   const [message, setMessage] = useState<string | null>(null);
   const [fileNotes, setFileNotes] = useState<string[]>([]);
@@ -48,7 +51,7 @@ export function InputPanel() {
     }
   }
 
-  function onDrop(e: DragEvent<HTMLTextAreaElement>) {
+  function onDrop(e: DragEvent<HTMLElement>) {
     if (!e.dataTransfer.files.length) return;
     e.preventDefault();
     void onFile(e.dataTransfer.files[0]);
@@ -64,20 +67,35 @@ export function InputPanel() {
     <section className="panel input-panel" aria-labelledby="input-title">
       <div className="section-heading">
         <div>
-          <h2 id="input-title">元の文章</h2>
+          <h2 id="input-title">{fileSource ? '元のファイル' : '元の文章'}</h2>
         </div>
-        <span className="text-count">{text.length.toLocaleString()} 文字</span>
+        <span className="text-count">{fileSource ? fileSummary(fileSource) : `${text.length.toLocaleString()} 文字`}</span>
       </div>
-      <textarea
-        className="input"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
-        onDrop={onDrop}
-        placeholder="文章を貼り付け、またはExcel・CSVをドロップ"
-        rows={3}
-        aria-label="解析する文章"
-      />
+      {fileSource ? (
+        <div
+          className="file-card"
+          aria-label="読み込んだファイル"
+          onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
+          onDrop={onDrop}
+        >
+          <Icon name="file" />
+          <div>
+            <p className="file-name">{fileSource.fileName}</p>
+            <p className="hint">セルの内容を検査しています。結果は下の表で確認できます。</p>
+          </div>
+        </div>
+      ) : (
+        <textarea
+          className="input"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
+          onDrop={onDrop}
+          placeholder="文章を貼り付け、またはExcel・CSVをドロップ"
+          rows={3}
+          aria-label="解析する文章"
+        />
+      )}
       <div className="row">
         <button type="button" onClick={onImport}>
           <Icon name="import" />
@@ -85,7 +103,7 @@ export function InputPanel() {
         </button>
         <button type="button" onClick={() => fileInput.current?.click()}>
           <Icon name="file" />
-          Excel・CSV を読込
+          {fileSource ? '別のファイルを読込' : 'Excel・CSV を読込'}
         </button>
         <input
           ref={fileInput}
@@ -117,4 +135,10 @@ export function InputPanel() {
       )}
     </section>
   );
+}
+
+function fileSummary(source: SpreadsheetSource): string {
+  if (source.kind === 'csv') return 'CSV';
+  const cells = source.sheets.reduce((n, s) => n + s.cells.length, 0);
+  return `${source.sheets.length} シート・${cells.toLocaleString()} セル`;
 }

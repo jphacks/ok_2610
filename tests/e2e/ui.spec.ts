@@ -112,6 +112,12 @@ test('Excel ファイルを読み込むと、セルの文字が検査される',
   await expect(page.getByRole('list', { name: 'ファイルの取込結果' })).toContainText('画像は取り込んでいません');
   await expect(page.getByLabel('加工後の文章')).not.toContainText('sato.hanako@example.co.jp', { timeout: 90_000 });
   await expect(page.getByLabel('加工後の文章')).toContainText('連絡先');
+  // プレビューはシートの表として描く
+  await expect(page.getByRole('tab', { name: '顧客' })).toBeVisible();
+  await expect(page.getByLabel('加工後の文章').getByRole('cell').first()).toHaveText('連絡先');
+  await page.getByRole('button', { name: '原文', exact: true }).click();
+  await expect(page.getByLabel('原文', { exact: true }).getByRole('cell').nth(1)).toHaveText('sato.hanako@example.co.jp');
+  await page.getByRole('button', { name: '加工後', exact: true }).click();
 
   // 確認した加工文を、元と同じ形式（.xlsx）で保存する
   await page.getByLabel('出力先を変更').click();
@@ -127,7 +133,8 @@ test('Excel ファイルを読み込むと、セルの文字が検査される',
   expect(sheet).not.toContain('sato.hanako@example.co.jp');
   expect(files['xl/media/image1.png']).toBeUndefined();
 
-  // 本文を書き換えると、同じ形式での保存は選べなくなる
+  // 削除して文章を入れ直すと、同じ形式での保存は選べなくなる
+  await page.getByRole('button', { name: '終了して削除' }).click();
   await page.getByLabel('解析する文章').fill('別の文章です。');
   await expect(page.getByLabel('元と同じ形式（.xlsx）で保存')).toHaveCount(0);
 });
