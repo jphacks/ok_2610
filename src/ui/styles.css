@@ -156,6 +156,8 @@ li + li { margin-top: 4px; }
 .row h3 { margin-bottom: 0; }
 .hint { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 8px 0 0; }
 .hint.warn, .warn > p { color: var(--warn); }
+.file-notes { padding-left: 18px; }
+.pre-line { white-space: pre-line; }
 
 textarea, input:not([type='checkbox'], [type='radio']), select {
   color: var(--text);

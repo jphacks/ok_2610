@@ -2,15 +2,16 @@ import { create } from 'zustand';
 import type { Answer, ConditionsResult } from '../core/conditions';
 import type { AnalysisResult, ManualOp, Settings } from '../core/model/types';
 import type { PolicySummary } from '../worker/protocol';
+import type { SpreadsheetSource } from '../infra/spreadsheet';
 import type { NanoAvailability } from '../engines/nano';
 import { clearPendingText, DEFAULT_PREFS, type Prefs } from '../infra/storage';
 import { clearAnalysisSession } from '../infra/analysis-session';
 
 // サイドパネルの状態。原文・対応表・解析結果はメモリにだけ置き、パネルを閉じれば消える。
 
-export type Destination = { kind: 'copy' } | { kind: 'insert'; tabId: number; origin: string; siteId: string; siteName: string };
+export type Destination = { kind: 'copy' } | { kind: 'file' } | { kind: 'insert'; tabId: number; origin: string; siteId: string; siteName: string };
 
-export const destinationKey = (d: Destination) => (d.kind === 'copy' ? 'copy' : `insert:${d.tabId}:${d.origin}`);
+export const destinationKey = (d: Destination) => (d.kind === 'insert' ? `insert:${d.tabId}:${d.origin}` : d.kind);
 
 export type Confirmed = { contentId: string; destinationKey: string; masked: string };
 
@@ -20,6 +21,8 @@ type State = {
   sessionId: number;
   confirmationInvalidated: boolean;
   text: string;
+  /** 読み込んだ Excel・CSV。本文を書き換えたら消す（同じ形式での保存は、読み込んだままの本文にだけ使える） */
+  source: SpreadsheetSource | null;
   prefs: Prefs;
   ops: ManualOp[];
   /** 元に戻す単位。まとめて適用した操作は1つのまとまりとして戻す（FR-19） */
@@ -41,6 +44,7 @@ type State = {
 
 type Actions = {
   setText: (text: string) => void;
+  importFile: (source: SpreadsheetSource) => void;
   setPrefs: (patch: Partial<Prefs>) => void;
   addOp: (op: ManualOp) => void;
   addOps: (ops: ManualOp[]) => void;
@@ -69,6 +73,7 @@ const initial: State = {
   sessionId: 0,
   confirmationInvalidated: false,
   text: '',
+  source: null,
   prefs: DEFAULT_PREFS,
   ops: [],
   groups: [],
@@ -98,7 +103,18 @@ const invalidate = (s: State) => ({
 export const useStore = create<State & Actions>((set) => ({
   ...initial,
   // 本文が変われば手動操作の位置は意味を失うので消す
-  setText: (text) => set((s) => ({ ...invalidate(s), text, ops: [], groups: [], redo: [], selectedId: null })),
+  setText: (text) =>
+    set((s) => ({
+      ...invalidate(s),
+      text,
+      ops: [],
+      groups: [],
+      redo: [],
+      selectedId: null,
+      source: null,
+      ...(s.destination.kind === 'file' ? { destination: { kind: 'copy' } as const } : {}),
+    })),
+  importFile: (source) => set((s) => ({ ...invalidate(s), text: source.text, source, ops: [], groups: [], redo: [], selectedId: null })),
   setPrefs: (patch) => set((s) => ({ ...invalidate(s), prefs: { ...s.prefs, ...patch } })),
   addOp: (op) => set((s) => ({ ...invalidate(s), ops: [...s.ops, op], groups: [...s.groups, 1], redo: [] })),
   addOps: (ops) => set((s) => (ops.length ? { ...invalidate(s), ops: [...s.ops, ...ops], groups: [...s.groups, ops.length], redo: [] } : s)),
