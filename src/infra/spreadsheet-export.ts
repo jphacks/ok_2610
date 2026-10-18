@@ -185,7 +185,7 @@ function safeDecode(s: string): string {
   }
 }
 
-function writeCell(original: string, value: string): string {
+export function writeCell(original: string, value: string): string {
   const open = /^<((?:[\w.-]+:)?)c\b([^>]*?)\/?>/.exec(original);
   const prefix = open?.[1] ?? '';
   const attrs = (open?.[2] ?? '').replace(/\s(t|cm|vm|ph)="[^"]*"/g, '');
@@ -213,7 +213,7 @@ const dirOf = (part: string) => part.slice(0, part.lastIndexOf('/') + 1);
 
 type Text = (path: string) => string | null;
 
-function syncTables(sheet: SheetLoc, values: Map<number, string>, text: Text, files: Map<string, string>, notes: Set<string>) {
+export function syncTables(sheet: SheetLoc, values: Map<number, string>, text: Text, files: Map<string, string>, notes: Set<string>) {
   if (!values.size) return;
   const byPos = new Map(sheet.cells.map((c, j) => [`${c.col},${c.row}`, j]));
   for (const rel of parseRels(text(relsPathOf(sheet.path)), dirOf(sheet.path)).values()) {
@@ -251,7 +251,7 @@ function columnOf(letters: string): number {
   return n - 1;
 }
 
-function renameSheets(sheets: SheetLoc[], newNames: string[], text: Text, files: Map<string, string>, notes: Set<string>) {
+export function renameSheets(sheets: SheetLoc[], newNames: string[], text: Text, files: Map<string, string>, notes: Set<string>) {
   const used = new Set(sheets.map((s, i) => (newNames[i] === s.name ? s.name.toLowerCase() : '')));
   const renames: [string, string][] = [];
   sheets.forEach((s, i) => {

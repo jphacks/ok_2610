@@ -125,6 +125,16 @@ test('Excel ファイルを読み込むと、セルの文字が検査される',
   expect(sheet).not.toContain('sato.hanako@example.co.jp');
   expect(files['xl/media/image1.png']).toBeUndefined();
 
+  // AIから戻ってきた Excel（ここでは加工後のファイル）を読み込み、元の語に戻して保存する
+  await page.getByText('AIの回答を復元').click();
+  await page.getByLabel('復元する Excel・CSV ファイル').setInputFiles({ name: '顧客_加工済み.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(readFileSync((await download.path())!)) });
+  await expect(page.getByText(/1セル・1箇所を戻しました/)).toBeVisible();
+  const [restored] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '「顧客_復元済み.xlsx」を保存' }).click()]);
+  expect(restored.suggestedFilename()).toBe('顧客_復元済み.xlsx');
+  const restoredSheet = strFromU8(unzipSync(new Uint8Array(readFileSync((await restored.path())!)))['xl/worksheets/sheet1.xml']!);
+  expect(restoredSheet).toContain('sato.hanako@example.co.jp');
+  await expect(page.getByText(/外部のサービスにはアップロードしないでください/)).toBeVisible();
+
   // 削除して文章を入れ直すと、同じ形式での保存は選べなくなる
   await page.getByRole('button', { name: '削除', exact: true }).click();
   await page.getByRole('button', { name: '削除する' }).click();
