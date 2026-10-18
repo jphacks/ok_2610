@@ -1,5 +1,4 @@
 import { useRef, useState, type DragEvent } from 'react';
-import { MESSAGES } from '../../core/explain/messages';
 import { ACCEPTED_EXTENSIONS, readSpreadsheetFile, SpreadsheetError } from '../../infra/spreadsheet';
 import { getActiveTab, importSelection } from '../../infra/tabs';
 import { useStore } from '../store';
@@ -63,8 +62,7 @@ export function InputPanel() {
     <section className="panel input-panel" aria-labelledby="input-title">
       <div className="section-heading">
         <div>
-          <h2 id="input-title">1. 文章</h2>
-          <p className="hint">貼り付けると、自動で検査が始まります。</p>
+          <h2 id="input-title">元の文章</h2>
         </div>
         <span className="text-count">{text.length.toLocaleString()} 文字</span>
       </div>
@@ -74,14 +72,14 @@ export function InputPanel() {
         onChange={(e) => setText(e.target.value)}
         onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
         onDrop={onDrop}
-        placeholder="AIに渡す前の文章を貼り付けてください。Excel・CSV ファイルはここへドロップできます。原文はこの画面の中だけで扱い、外部には送りません。"
-        rows={6}
+        placeholder="文章を貼り付け、またはExcel・CSVをドロップ"
+        rows={3}
         aria-label="解析する文章"
       />
       <div className="row">
         <button type="button" onClick={onImport}>
           <Icon name="import" />
-          ページの選択テキストを取込
+          選択文を取り込む
         </button>
         <button type="button" onClick={() => fileInput.current?.click()}>
           <Icon name="file" />
@@ -107,7 +105,6 @@ export function InputPanel() {
           ))}
         </ul>
       )}
-      <p className="hint">{MESSAGES.sessionScope}</p>
     </section>
   );
 }
