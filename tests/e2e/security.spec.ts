@@ -47,33 +47,25 @@ async function instrument(page: Page) {
   });
 }
 
-test('設定変更直後と解析例外時に古い確認でコピーできない', async ({ context, extensionId }) => {
+test('設定変更直後と解析例外時に古い版をコピーできない', async ({ context, extensionId }) => {
   const page = await context.newPage();
   await instrument(page);
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await page.getByLabel('解析する文章').fill('電話は080-9876-5432です。');
-  const confirm = page.getByRole('button', { name: 'この加工文で確認する' });
-  const copy = page.getByRole('button', { name: '確認した加工文をコピー' });
-  await expect(confirm).toBeEnabled({ timeout: 90_000 });
-  await confirm.click();
-  await expect(copy).toBeEnabled();
+  const copy = page.getByRole('button', { name: '加工文をコピー' });
+  await expect(copy).toBeEnabled({ timeout: 90_000 });
   await page.evaluate(() => { (window as ReviewWindow).security.failAnalysis = true; });
   await page.getByRole('button', { name: '設定を開く', exact: true }).click();
   await page.getByRole('radio', { name: 'A 識別情報を優先' }).click();
   await page.getByRole('button', { name: '設定を閉じる' }).click();
   // ポーリングで350msの隙間を見逃さない。
   expect(await copy.isEnabled()).toBe(false);
-  expect(await confirm.isEnabled()).toBe(false);
   await expect(page.getByRole('alert')).toContainText('SECURITY_TEST_FAILURE');
   await expect(copy).toBeDisabled();
-  await expect(confirm).toBeDisabled();
   await page.evaluate(() => { (window as ReviewWindow).security.failAnalysis = false; });
   await page.getByRole('button', { name: '設定を開く', exact: true }).click();
   await page.getByRole('radio', { name: 'B 属性も一般化' }).click();
   await page.getByRole('button', { name: '設定を閉じる' }).click();
-  await expect(confirm).toBeEnabled();
-  await expect(copy).toBeDisabled();
-  await confirm.click();
   await expect(copy).toBeEnabled();
 });
 
@@ -104,9 +96,8 @@ test('通知を閉じなくても同じ版番号のポリシー更新が反映�
   await instrument(page);
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await page.getByLabel('解析する文章').fill('電話は080-9876-5432です。');
-  const confirm = page.getByRole('button', { name: 'この加工文で確認する' });
-  const copy = page.getByRole('button', { name: '確認した加工文をコピー' });
-  await expect(confirm).toBeEnabled({ timeout: 90_000 });
+  const copy = page.getByRole('button', { name: '加工文をコピー' });
+  await expect(copy).toBeEnabled({ timeout: 90_000 });
   for (const requireConditions of [false, true, false]) {
     const reads = await page.evaluate(requireConditions => {
       const s = (window as ReviewWindow).security;
@@ -119,11 +110,8 @@ test('通知を閉じなくても同じ版番号のポリシー更新が反映�
     await expect.poll(() => page.evaluate(() => (window as ReviewWindow).security.policyReads)).toBeGreaterThan(reads);
     if (requireConditions) {
       await expect(page.getByText('組織ポリシーにより、利用条件の確認が済むまで出力できません。')).toBeVisible();
-      await expect(confirm).toBeDisabled();
-    } else {
-      await expect(confirm).toBeEnabled();
       await expect(copy).toBeDisabled();
-      await confirm.click();
+    } else {
       await expect(copy).toBeEnabled();
     }
   }
@@ -134,19 +122,16 @@ test('同一タブの別ドメインへの遷移と、挿入待ち中の変更�
   await instrument(page);
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await page.getByLabel('解析する文章').fill('電話は080-9876-5432です。');
-  const confirm = page.getByRole('button', { name: 'この加工文で確認する' });
-  await expect(confirm).toBeEnabled({ timeout: 90_000 });
+  await expect(page.getByRole('button', { name: '加工文をコピー' })).toBeEnabled({ timeout: 90_000 });
   await page.getByLabel('出力先を変更').click();
   await page.getByRole('radio', { name: '表示中のAIサイトの入力欄に挿入' }).check();
-  await confirm.click();
-  const insert = page.getByRole('button', { name: '確認した加工文を入力欄に挿入' });
+  const insert = page.getByRole('button', { name: '加工文を入力欄に挿入' });
   await page.evaluate(() => { (window as ReviewWindow).security.tabUrl = 'https://claude.ai/'; });
   await insert.click();
   await expect(page.getByText('挿入先のタブが切り替わりました。挿入先を設定し直してください。')).toBeVisible();
   expect(await page.evaluate(() => (window as ReviewWindow).security.insertions)).toBe(0);
 
   await page.getByRole('radio', { name: '表示中のAIサイトの入力欄に挿入' }).check();
-  await confirm.click();
   await page.evaluate(() => { (window as ReviewWindow).security.holdQuery = true; });
   await insert.click();
   await expect.poll(() => page.evaluate(() => Boolean((window as ReviewWindow).security.releaseQuery))).toBe(true);
@@ -154,9 +139,8 @@ test('同一タブの別ドメインへの遷移と、挿入待ち中の変更�
   await page.getByRole('radio', { name: 'A 識別情報を優先' }).click();
   await page.getByRole('button', { name: '設定を閉じる' }).click();
   await page.evaluate(() => { const s = (window as ReviewWindow).security; s.holdQuery = false; s.releaseQuery!(); });
-  await expect(confirm).toBeEnabled();
+  await expect(insert).toBeEnabled();
   expect(await page.evaluate(() => (window as ReviewWindow).security.insertions)).toBe(0);
-  await confirm.click();
   await insert.click();
   await expect.poll(() => page.evaluate(() => (window as ReviewWindow).security.insertions)).toBe(1);
 });

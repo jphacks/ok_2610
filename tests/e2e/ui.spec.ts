@@ -19,10 +19,7 @@ test('メイン画面だけで確認・コピーでき、設定は別画面で�
   await expect(page.locator('.output-panel .output-preview')).toHaveCount(0);
   await expect(page.getByText('検査の詳細', { exact: true })).toBeVisible();
   await expect(page.getByText(/NER: 実行/)).not.toBeVisible();
-  const confirm = page.getByRole('button', { name: 'この加工文で確認する' });
-  const copy = page.getByRole('button', { name: '確認した加工文をコピー' });
-  await expect(copy).toBeDisabled();
-  await confirm.click();
+  const copy = page.getByRole('button', { name: '加工文をコピー' });
   await copy.click();
   await expect(page.getByRole('status').filter({ hasText: 'コピーしました' })).toBeVisible();
 
@@ -52,17 +49,13 @@ test('メイン画面だけで確認・コピーでき、設定は別画面で�
 
   await page.getByRole('button', { name: '設定を開く', exact: true }).click();
   await page.getByRole('radio', { name: 'A 識別情報を優先' }).click();
-  // 変更直後に確認を失効。閉じてからも入力内容は維持される。
+  // 変更直後は解析し直すまで出力できない。閉じてからも入力内容は維持される。
   expect(await copy.isEnabled()).toBe(false);
   await page.getByRole('button', { name: '文章に戻る' }).click();
   await expect(page.getByLabel('解析する文章')).toHaveValue(demo);
-  await expect(confirm).toBeEnabled();
-  await expect(copy).toBeDisabled();
-  await confirm.click();
   await expect(copy).toBeEnabled();
   await page.getByRole('button', { name: '原文', exact: true }).click();
   await expect(page.getByLabel('原文', { exact: true })).toContainText('佐藤花子');
-  await expect(confirm).toBeDisabled();
   await expect(copy).toBeDisabled();
   await page.getByRole('button', { name: '加工後に戻って確認' }).click();
   await expect(output).not.toContainText('佐藤花子');
@@ -119,11 +112,10 @@ test('Excel ファイルを読み込むと、セルの文字が検査される',
   await expect(page.getByLabel('原文', { exact: true }).getByRole('cell').nth(1)).toHaveText('sato.hanako@example.co.jp');
   await page.getByRole('button', { name: '加工後', exact: true }).click();
 
-  // 確認した加工文を、元と同じ形式（.xlsx）で保存する
+  // 加工文を、元と同じ形式（.xlsx）で保存する
   await page.getByLabel('出力先を変更').click();
   await page.getByLabel('元と同じ形式（.xlsx）で保存').check();
-  await page.getByRole('button', { name: 'この加工文で確認する' }).click();
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '確認した加工文をファイルに保存' }).click()]);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '加工文をファイルに保存' }).click()]);
   expect(download.suggestedFilename()).toBe('顧客_加工済み.xlsx');
   const { readFileSync } = await import('node:fs');
   const { unzipSync, strFromU8 } = await import('fflate');

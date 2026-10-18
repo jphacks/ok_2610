@@ -3,7 +3,7 @@ import { expect, test } from './fixtures';
 
 const demo = readFileSync(new URL('../fixtures/demo-email.txt', import.meta.url), 'utf8');
 
-test('デモの問合せメールを解析し、確認した加工文だけを出力できる（AT-01, AT-02, AT-05, AT-07）', async ({ context, extensionId, external }) => {
+test('デモの問合せメールを解析し、解析し終えた最新の加工文だけを出力できる（AT-01, AT-02, AT-05, AT-07）', async ({ context, extensionId, external }) => {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await page.getByLabel('解析する文章').fill(demo);
@@ -26,19 +26,16 @@ test('デモの問合せメールを解析し、確認した加工文だけを�
   await page.getByLabel('加工後の文章').getByRole('button', { name: '人物A' }).first().click();
   await expect(page.getByText('氏名はそれだけで本人を特定できます。')).toBeVisible();
 
-  // 確認するまで出力できない → 確認すると出力できる
-  const copy = page.getByRole('button', { name: '確認した加工文をコピー' });
-  await expect(copy).toBeDisabled();
-  await page.getByRole('button', { name: 'この加工文で確認する' }).click();
+  // 解析し終えた版はコピー1回で出力できる（押した時点の版を確認済みにする）
+  const copy = page.getByRole('button', { name: '加工文をコピー' });
   await expect(copy).toBeEnabled();
 
-  // AT-05: 確認後に設定を変えると、確認が失効して出力できない
+  // AT-05: 設定を変えると、解析し直すまで出力できない
   await page.getByRole('button', { name: '設定を開く', exact: true }).click();
   await page.getByRole('radio', { name: 'A 識別情報を優先' }).click();
+  expect(await copy.isEnabled()).toBe(false);
   await page.getByRole('button', { name: '設定を閉じる' }).click();
-  await expect(page.getByText('内容が変わったため、確認をやり直してください')).toBeVisible();
-  await expect(copy).toBeDisabled();
-  await page.getByRole('button', { name: 'この加工文で確認する' }).click();
+  await expect(copy).toBeEnabled();
   await copy.click();
   await expect(page.getByText(/コピーしました/)).toBeVisible();
 
