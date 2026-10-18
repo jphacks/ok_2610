@@ -20,7 +20,10 @@ export function Header() {
       : policy.status === 'active'
         ? { tone: 'ok', label: `ポリシー ${policy.version}` }
         : { tone: 'danger', label: 'ポリシー読込み失敗' };
-  const link = destination.kind === 'insert' ? { tone: 'ok', label: `連携: ${destination.siteName}` } : { tone: 'muted', label: '連携: コピーのみ' };
+  const link =
+    destination.kind === 'insert'
+      ? { tone: 'ok', label: `連携: ${destination.siteName}` }
+      : { tone: 'muted', label: destination.kind === 'file' ? '連携: ファイル保存' : '連携: コピーのみ' };
   const hasResult = !!text.trim() && !!result?.text.trim();
 
   return (

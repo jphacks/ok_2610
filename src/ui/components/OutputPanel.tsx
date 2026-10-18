@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { siteForUrl } from '../../adapters/sites';
 import { MESSAGES } from '../../core/explain/messages';
 import { copyText } from '../../infra/clipboard';
+import { saveFile } from '../../infra/download';
+import { exportSpreadsheet } from '../../infra/spreadsheet-export';
 import { log } from '../../infra/logger';
 import { getActiveTab, insertToTab, requestSitePermission } from '../../infra/tabs';
 import { canConfirm, canOutput, destinationKey, useStore } from '../store';
@@ -10,7 +12,7 @@ import { Icon } from './Icon';
 /** 出力（FR-22, FR-23）。確認した版と送信先が一致するときだけ、コピー・挿入できる */
 export function OutputPanel() {
   const state = useStore();
-  const { result, confirmed, destination, conditions, analyzing } = state;
+  const { result, confirmed, destination, conditions, analyzing, source } = state;
   const [message, setMessage] = useState<string | null>(null);
   if (!result || !result.text.trim()) return null;
 
@@ -20,6 +22,9 @@ export function OutputPanel() {
   const originNotAllowed =
     destination.kind === 'insert' && policy.status === 'active' && policy.allowedOrigins !== undefined && !policy.allowedOrigins.includes(destination.origin);
   const blocked = !canConfirm(state);
+  // 読み込んだファイルの本文のまま解析した結果だけを、同じ形式で保存できる
+  const fileSource = source && result.text === source.text ? source : null;
+  const fileLabel = fileSource ? `元と同じ形式（.${fileSource.fileName.split('.').pop()?.toLowerCase()}）で保存` : '';
 
   async function chooseInsert() {
     const sessionId = useStore.getState().sessionId;
@@ -45,6 +50,20 @@ export function OutputPanel() {
       const ok = await copyText(result.masked);
       setMessage(ok ? MESSAGES.copied : 'コピーできませんでした。');
       log('output', { copy: ok });
+      return;
+    }
+    if (destination.kind === 'file') {
+      const src = current.source;
+      if (!src || src.text !== result.text) return setMessage('読み込んだファイルの本文が変わったため、同じ形式では保存できません。');
+      try {
+        const out = exportSpreadsheet(src, result.segments);
+        saveFile(out.bytes, out.fileName, out.mimeType);
+        setMessage([`確認した加工文を「${out.fileName}」として保存しました。保存先の扱いにご注意ください。`, ...out.notes].join('\n'));
+        log('output', { file: true });
+      } catch {
+        setMessage('ファイルを書き出せませんでした。コピーをお使いください。');
+        log('output', { file: false });
+      }
       return;
     }
     const site = siteForUrl(destination.origin);
@@ -83,6 +102,17 @@ export function OutputPanel() {
           <input type="radio" name="dest" checked={destination.kind === 'insert'} onChange={() => void chooseInsert()} />
           表示中のAIサイトの入力欄に挿入
         </label>
+        {fileSource && (
+          <label className="check-line">
+            <input type="radio" name="dest" checked={destination.kind === 'file'} onChange={() => state.setDestination({ kind: 'file' })} />
+            {fileLabel}
+          </label>
+        )}
+        {destination.kind === 'file' && fileSource && (
+          <p className="hint">
+            加工した値のセルだけを書き換え、書式・列幅・シート構成は元のまま残します。画像・コメント・グラフ・作成者などの情報は検査していないため取り除きます。
+          </p>
+        )}
         {destination.kind === 'insert' && site && (
           <p className="hint">
             挿入先: {site.name}（{new URL(site.origin).host}）の入力欄。送信ボタンは押しません。
@@ -125,14 +155,14 @@ export function OutputPanel() {
         </button>
         <Icon name="arrow" className="action-arrow" />
         <button type="button" className={ready ? 'primary' : ''} disabled={!ready} onClick={() => void onOutput()}>
-          <Icon name={destination.kind === 'copy' ? 'copy' : 'arrow'} />
-          {destination.kind === 'copy' ? MESSAGES.outputCopy : MESSAGES.outputInsert}
+          <Icon name={destination.kind === 'copy' ? 'copy' : destination.kind === 'file' ? 'file' : 'arrow'} />
+          {destination.kind === 'copy' ? MESSAGES.outputCopy : destination.kind === 'file' ? '確認した加工文をファイルに保存' : MESSAGES.outputInsert}
         </button>
       </div>
       {stale && <p className="hint warn">{MESSAGES.invalidated}</p>}
       {ready && <p className="hint">{MESSAGES.confirmed}</p>}
       {!ready && !blocked && !stale && <p className="hint">加工文を確認すると、コピー・挿入できるようになります。</p>}
-      {message && <p className="hint" role="status">{message}</p>}
+      {message && <p className="hint pre-line" role="status">{message}</p>}
       <p className="hint">{MESSAGES.clipboardNote}</p>
     </section>
   );
