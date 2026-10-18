@@ -134,7 +134,8 @@ test('Excel ファイルを読み込むと、セルの文字が検査される',
   expect(files['xl/media/image1.png']).toBeUndefined();
 
   // 削除して文章を入れ直すと、同じ形式での保存は選べなくなる
-  await page.getByRole('button', { name: '終了して削除' }).click();
+  await page.getByRole('button', { name: '削除', exact: true }).click();
+  await page.getByRole('button', { name: '削除する' }).click();
   await page.getByLabel('解析する文章').fill('別の文章です。');
   await expect(page.getByLabel('元と同じ形式（.xlsx）で保存')).toHaveCount(0);
 });
