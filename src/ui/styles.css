@@ -234,6 +234,11 @@ button.link { min-height: auto; padding: 0 4px; color: var(--accent); background
 .mark.kept { background: var(--kept); border-color: var(--kept-border); border-bottom-style: dashed; }
 /* 手動で直した箇所は、自動の藍と見分けられるよう緑青にし、二重線も付ける（色だけに頼らない） */
 .mark.manual { background: var(--manual); color: var(--manual-text); border-color: var(--manual-border); border-bottom-style: double; border-bottom-width: 3px; }
+/* 手動でマスクする欄。見逃しを直す操作なので、プレビューのすぐ下に区切って置く */
+.manual-mask { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 4px; }
+.manual-mask .row { margin: 8px 0; }
+.manual-mask input:not([type]) { flex: 1 1 160px; min-width: 0; }
+.manual-mask .hint { margin: 4px 0 0; }
 .sheet-preview { display: grid; gap: 6px; min-width: 0; }
 .sheet-tabs { display: flex; gap: 4px; overflow-x: auto; }
 .sheet-tab { font-size: 12px; padding: 3px 10px; min-height: 28px; border-radius: 6px 6px 0 0; background: var(--surface-subtle); color: var(--muted); white-space: nowrap; }

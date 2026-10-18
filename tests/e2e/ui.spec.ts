@@ -88,6 +88,44 @@ test('個別の追加加工と元に戻す操作、利用条件への導線を�
   await expect(page.getByRole('button', { name: '利用条件を確認', exact: true })).toBeVisible();
 });
 
+test('加工漏れを手動でマスクでき、同じ語もまとめて隠せる', async ({ context, extensionId }) => {
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 400, height: 900 });
+  await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await page.getByLabel('解析する文章').fill(demo);
+  const output = page.getByLabel('加工後の文章');
+  await expect(output).toContainText('人物A', { timeout: 90_000 });
+  await expect(output).toContainText('電動ベッド');
+
+  // 加工後の表示で語を選ぶと入力欄に入り、同じ語の出現箇所がまとめて対象になる
+  await output.evaluate((el) => {
+    const span = [...el.querySelectorAll('span[data-start]')].find((s) => s.textContent?.includes('電動ベッド'));
+    const node = span?.firstChild;
+    if (!node?.textContent) throw new Error('no text');
+    const at = node.textContent.indexOf('電動ベッド');
+    const range = document.createRange();
+    range.setStart(node, at);
+    range.setEnd(node, at + '電動ベッド'.length);
+    getSelection()?.removeAllRanges();
+    getSelection()?.addRange(range);
+    el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  });
+  await expect(page.getByLabel('手動で隠す語')).toHaveValue('電動ベッド');
+  await page.getByRole('button', { name: 'マスクする（2箇所）' }).click();
+  await expect(output).not.toContainText('電動ベッド');
+  await expect(output.locator('.mark.manual')).toHaveCount(2);
+
+  // 語を入力しても隠せる。元に戻すと、まとめて追加した分が1回で戻る
+  await page.getByLabel('手動で隠す語').fill('車椅子');
+  await page.getByLabel('手動で隠す語').press('Enter');
+  await expect(output).not.toContainText('車椅子');
+  await page.getByRole('button', { name: '操作を元に戻す', exact: true }).click();
+  await expect(output).toContainText('車椅子');
+  await expect(output).not.toContainText('電動ベッド');
+  await page.getByRole('button', { name: '操作を元に戻す', exact: true }).click();
+  await expect(output).toContainText('電動ベッド');
+});
+
 test('Excel ファイルを読み込むと、セルの文字が検査される', async ({ context, extensionId }) => {
   const { strToU8, zipSync } = await import('fflate');
   const xlsx = zipSync({

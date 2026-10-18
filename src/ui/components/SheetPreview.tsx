@@ -82,7 +82,7 @@ export function SheetPreview({
           ))}
         </div>
       )}
-      <div className="sheet-scroll" aria-label={mode === 'masked' ? '加工後の文章' : '原文'} onMouseUp={mode === 'original' ? onMouseUp : undefined}>
+      <div className="sheet-scroll" aria-label={mode === 'masked' ? '加工後の文章' : '原文'} onMouseUp={onMouseUp}>
         {sheet.rows.length === 0 ? (
           <p className="hint sheet-empty">文字の入ったセルはありません。</p>
         ) : (
