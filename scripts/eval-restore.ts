@@ -10,14 +10,14 @@ if (!answersPath || !outPath) {
   process.exit(1);
 }
 
-type Answer = { id: string; variant: string; answer: string; restoreMap: Record<string, string> };
+type Answer = { id: string; variant: string; answer: string; restoreMap: Record<string, string>; generalizedMap?: Record<string, string> };
 const answers = readFileSync(answersPath, 'utf8')
   .split('\n')
   .filter((l) => l.trim())
   .map((l) => JSON.parse(l) as Answer);
 
 const out = answers.map((a) => {
-  const r = restoreLabels(a.answer, a.restoreMap);
+  const r = restoreLabels(a.answer, a.restoreMap, a.generalizedMap);
   return { id: a.id, variant: a.variant, restored: r.restored, replacedCount: r.replacedCount, unmatched: r.unmatched };
 });
 writeFileSync(outPath, JSON.stringify(out));

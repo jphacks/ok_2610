@@ -330,6 +330,7 @@ export async function analyze(input: AnalyzeInput): Promise<AnalysisResult> {
     opIssues,
     contentId,
     restoreMap: rendered.restoreMap,
+    generalizedMap: rendered.generalizedMap,
   };
 }
 

@@ -11,13 +11,17 @@ export function RestorePanel() {
   const [answer, setAnswer] = useState('');
   const [restored, setRestored] = useState<RestoreResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  if (!result || Object.keys(result.restoreMap).length === 0) return null;
+  if (!result || (Object.keys(result.restoreMap).length === 0 && Object.keys(result.generalizedMap).length === 0)) return null;
 
   async function restore() {
     const before = useStore.getState();
     if (!before.result || before.analyzing || before.error || before.resultRevision !== before.revision) return;
     try {
-      const value = await workerClient().call('restore', { text: answer, restoreMap: before.result.restoreMap });
+      const value = await workerClient().call('restore', {
+        text: answer,
+        restoreMap: before.result.restoreMap,
+        generalizedMap: before.result.generalizedMap,
+      });
       if (useStore.getState().revision === before.revision) setRestored(value);
     } catch {
       if (useStore.getState().revision === before.revision) setMessage('復元できませんでした。もう一度お試しください。');
@@ -31,7 +35,7 @@ export function RestorePanel() {
           <h2 id="restore-title">AIの回答を復元</h2>
           <span className="chip chip-muted">任意</span>
         </summary>
-        <p className="hint">「人物A」などのラベルを元の語に戻します。一般化した情報は戻せません。</p>
+        <p className="hint">「人物A」などのラベルや、「30代」などに一般化した語を元の語に戻します。元の語が1つに決まらない一般化と、削除した情報は戻せません。</p>
         <textarea rows={5} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="AIの回答を貼り付け" aria-label="AIの回答" />
         <button
           type="button"
@@ -46,6 +50,11 @@ export function RestorePanel() {
               {restored.restored}
             </div>
             <p className="hint">{restored.replacedCount}箇所を戻しました。</p>
+            {restored.generalized.length > 0 && (
+              <p className="hint">
+                一般化から戻した語: {restored.generalized.map((g) => `${g.from}→${g.to}`).join('、')}（AIが一般的な意味で使った語も戻るので、確かめてください）
+              </p>
+            )}
             {restored.unmatched.length > 0 && <p className="hint warn">戻せなかったラベル: {restored.unmatched.join('、')}（AIが書き換えた可能性があります）</p>}
             <button
               type="button"

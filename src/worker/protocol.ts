@@ -19,7 +19,7 @@ export type AnalyzeRequest = {
 
 export type WorkerRequest =
   | { id: number; type: 'analyze'; payload: AnalyzeRequest }
-  | { id: number; type: 'restore'; payload: { text: string; restoreMap: Record<string, string> } }
+  | { id: number; type: 'restore'; payload: { text: string; restoreMap: Record<string, string>; generalizedMap: Record<string, string> } }
   | { id: number; type: 'nerStatus' };
 
 export type WorkerResponseMap = {

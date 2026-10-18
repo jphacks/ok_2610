@@ -47,7 +47,7 @@ async function handle(req: WorkerRequest): Promise<WorkerResponse> {
       return { id: req.id, ok: true, result: { ...result, policy: summarize(policy) } };
     }
     case 'restore':
-      return { id: req.id, ok: true, result: restoreLabels(req.payload.text, req.payload.restoreMap) };
+      return { id: req.id, ok: true, result: restoreLabels(req.payload.text, req.payload.restoreMap, req.payload.generalizedMap) };
     case 'nerStatus':
       return { id: req.id, ok: true, result: await nerAvailability() };
   }
