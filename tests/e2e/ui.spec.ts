@@ -15,7 +15,7 @@ test('メイン画面だけで確認・コピーでき、設定は別画面で�
   await expect(output).toContainText('人物A', { timeout: 90_000 });
   await expect(output).toHaveCount(1);
   await expect(page.getByLabel('解析する文章')).toHaveCount(1);
-  await expect(page.getByRole('button', { name: '終了して削除' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '削除', exact: true })).toHaveCount(1);
   await expect(page.locator('.output-panel .output-preview')).toHaveCount(0);
   await expect(page.getByText('検査の詳細', { exact: true })).toBeVisible();
   await expect(page.getByText(/NER: 実行/)).not.toBeVisible();
@@ -50,7 +50,7 @@ test('メイン画面だけで確認・コピーでき、設定は別画面で�
     }
   }
 
-  await page.getByRole('button', { name: '加工の設定を開く' }).click();
+  await page.getByRole('button', { name: '設定を開く', exact: true }).click();
   await page.getByRole('radio', { name: 'A 識別情報を優先' }).click();
   // 変更直後に確認を失効。閉じてからも入力内容は維持される。
   expect(await copy.isEnabled()).toBe(false);

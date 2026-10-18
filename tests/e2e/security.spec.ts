@@ -87,7 +87,8 @@ test('削除後は復元済み個人情報も回答も残らず、解析Worker�
   await page.getByRole('textbox', { name: 'AIの回答' }).fill('人物Aさんへ返信します。');
   await page.getByRole('button', { name: 'ラベルを元の語に戻す' }).click();
   await expect(page.getByLabel('元に戻した文章')).toHaveText('佐藤花子さんへ返信します。');
-  await page.getByRole('button', { name: '終了して削除' }).click();
+  await page.getByRole('button', { name: '削除', exact: true }).click();
+  await page.getByRole('button', { name: '削除する' }).click();
   expect(await page.evaluate(() => (window as ReviewWindow).security.terminated)).toBeGreaterThan(0);
   await page.getByLabel('解析する文章').fill('電話は080-9876-5432です。');
   await expect(page.getByLabel('加工後の文章')).toContainText('[電話番号1]', { timeout: 90_000 });

@@ -1,54 +1,58 @@
+/*
+ * 配色は「墨と藍」。書類に朱を入れるのではなく、藍の判で置き換えた箇所を示す。
+ * 紙（bg）・用紙（surface）・墨（text）・藍（accent）・黄檗（残した候補）・朱（止める操作）。
+ */
 :root {
-  --bg: #f4f6f9;
-  --surface: #ffffff;
-  --surface-subtle: #f8fafc;
-  --text: #202b3d;
-  --muted: #667186;
-  --border: #e0e5ed;
-  --border-strong: #c2cbd9;
-  --accent: #315fd6;
-  --accent-text: #ffffff;
-  --accent-soft: #edf2ff;
-  --ok: #23745c;
-  --ok-soft: #eaf5ef;
-  --warn: #865b12;
-  --warn-soft: #fcf4e5;
-  --danger: #b13e39;
-  --danger-soft: #fcf0ee;
-  --changed: #eeebfc;
-  --changed-border: #8774cd;
-  --kept: #fcf2d7;
-  --kept-border: #b89336;
-  --focus: #315fd6;
-  --radius: 14px;
-  --shadow: 0 2px 5px rgb(26 42 67 / 2%);
+  --bg: #eef1f0;
+  --surface: #fafbfa;
+  --surface-subtle: #f3f5f4;
+  --text: #1d2422;
+  --muted: #5d6965;
+  --border: #d9dfdc;
+  --border-strong: #b7c1bd;
+  --accent: #24497a;
+  --accent-text: #f4f7fb;
+  --accent-soft: #e2e9f3;
+  --ok: #2c6a4e;
+  --ok-soft: #e3f0e8;
+  --warn: #7f5a0c;
+  --warn-soft: #f6eedb;
+  --danger: #a8372a;
+  --danger-soft: #f8e9e6;
+  --changed: #dfe7f3;
+  --changed-text: #1b3a63;
+  --changed-border: #24497a;
+  --kept: #f4e9c2;
+  --kept-border: #9c7a12;
+  --focus: #24497a;
+  --radius: 12px;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #15191f;
-    --surface: #1e242d;
-    --surface-subtle: #191f27;
-    --text: #e6eaf1;
-    --muted: #a3afc2;
-    --border: #343e4c;
-    --border-strong: #556379;
-    --accent: #a0baff;
-    --accent-text: #15274e;
-    --accent-soft: #28354f;
-    --ok: #8ad4b2;
-    --ok-soft: #203c33;
-    --warn: #e6c17a;
-    --warn-soft: #3a3122;
-    --danger: #f0a19a;
-    --danger-soft: #3d2a2b;
-    --changed: #36304e;
-    --changed-border: #ac99ec;
-    --kept: #3c3523;
-    --kept-border: #d0b469;
-    --focus: #a0baff;
-    --shadow: none;
+    --bg: #131716;
+    --surface: #1b201f;
+    --surface-subtle: #171b1a;
+    --text: #e2e7e5;
+    --muted: #9aa6a1;
+    --border: #2c3432;
+    --border-strong: #46504d;
+    --accent: #9fb7e2;
+    --accent-text: #0f1f38;
+    --accent-soft: #212d40;
+    --ok: #8fcfaf;
+    --ok-soft: #1c3229;
+    --warn: #e2c27c;
+    --warn-soft: #332b1a;
+    --danger: #f0a094;
+    --danger-soft: #3a2420;
+    --changed: #23314a;
+    --changed-text: #c9d7f1;
+    --changed-border: #8aa6d8;
+    --kept: #383120;
+    --kept-border: #cdb25c;
+    --focus: #9fb7e2;
     color-scheme: dark;
   }
 }
@@ -77,14 +81,16 @@ li + li { margin-top: 4px; }
 .icon { flex: 0 0 auto; vertical-align: middle; }
 .app { max-width: 760px; padding: 0 20px; margin: 0 auto; }
 
-/* 常時使う入口だけを上部に置く。 */
-.header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 16px 0; margin-bottom: 8px; background: var(--bg); }
-.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.brand-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); flex-shrink: 0; }
-.header h1 { font-size: 16px; line-height: 1.5; letter-spacing: -.02em; margin: 0; }
-.header-actions { display: flex; gap: 8px; align-items: center; }
+/* 拡張名は Chrome が上に出すので、検査の状態といまの設定だけを置く。設定はタグで見せ、変更は設定画面で行う。 */
+.header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 0; margin-bottom: 4px; background: var(--bg); }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; margin: 0; min-width: 0; }
+.tags li { margin: 0; }
+.tag { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; line-height: 1.6; padding: 2px 10px; border-radius: 999px; background: var(--surface); color: var(--muted); white-space: nowrap; }
+.tag-ok, .tag-danger, .tag-muted { font-weight: 600; }
+.tag-ok { color: var(--ok); background: var(--ok-soft); }
+.tag-danger { color: var(--danger); background: var(--danger-soft); }
+.tag-ok::before, .tag-danger::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.header .chips { margin-top: 12px; }
 .chip {
   display: inline-flex;
   align-items: center;
@@ -107,7 +113,6 @@ li + li { margin-top: 4px; }
   border-radius: var(--radius);
   padding: 16px;
   margin: 0 0 12px;
-  box-shadow: var(--shadow);
   min-width: 0;
 }
 .section-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
@@ -218,7 +223,8 @@ button.link { min-height: auto; padding: 0 4px; color: var(--accent); background
 
 .doc { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--border); border-radius: 8px; padding: 16px; max-height: clamp(180px, 34vh, 420px); overflow: auto; overscroll-behavior: contain; background: var(--surface-subtle); line-height: 1.9; scrollbar-gutter: stable; }
 .mark { display: inline; min-height: 0; font: inherit; line-height: inherit; padding: 1px 2px; border: none; border-bottom: 2px solid; border-radius: 3px; cursor: pointer; color: inherit; white-space: pre-wrap; }
-.mark.changed { background: var(--changed); border-color: var(--changed-border); }
+/* 置き換えた箇所は藍の判のように濃く示す。画面でいちばん目立たせる要素なので、ほかの装飾は控えめにする。 */
+.mark.changed { background: var(--changed); border-color: var(--changed-border); color: var(--changed-text); font-weight: 600; }
 .mark.kept { background: var(--kept); border-color: var(--kept-border); border-bottom-style: dashed; }
 .mark.manual { border-bottom-style: double; border-bottom-width: 3px; }
 .mark.selected { outline: 2px solid var(--focus); outline-offset: 1px; }
@@ -248,8 +254,6 @@ details[open].sub > summary { margin-bottom: 16px; }
 button.confirmed-button { color: var(--ok); border-color: var(--border); background: var(--ok-soft); }
 .restore-panel textarea { margin: 14px 0 10px; }
 .restore-panel .output-preview { margin-top: 14px; }
-.footer { color: var(--muted); font-size: 11px; padding: 6px 4px 28px; }
-.footer p { margin: 4px 0; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; }
@@ -262,15 +266,9 @@ button.confirmed-button { color: var(--ok); border-color: var(--border); backgro
 .risk-details { font-size: 12px; margin-top: 10px; }
 .risk-details > summary { color: var(--muted); }
 .risk-details > ul { margin-top: 10px; }
-.eyebrow { display: block; color: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .14em; margin-bottom: 8px; }
 button.icon-button { padding: 8px; width: 36px; height: 36px; min-height: 36px; flex-shrink: 0; border-color: transparent; }
 .input-panel .row { margin-bottom: 0; }
 .input-panel textarea { background: var(--surface); border-color: var(--border); }
-.preferences-shortcut { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; background: transparent; border-color: transparent; color: var(--muted); padding: 2px 4px 14px; margin-bottom: 6px; font-size: 11px; text-align: left; }
-.preferences-shortcut > span { display: flex; align-items: center; gap: 6px; }
-.preferences-shortcut .icon { width: 14px; height: 14px; }
-.preferences-shortcut .shortcut-label { white-space: nowrap; color: var(--accent); }
-.separator { color: var(--border-strong); margin: 0 3px; }
 .results-panel { padding-bottom: 0; }
 .preview-card { border: 0; border-radius: 0; margin: 0; padding: 0; }
 .preview-card .row.between { margin-bottom: 10px; }
@@ -299,15 +297,10 @@ button.utility-link { border: none; background: transparent; padding: 4px 0; col
 .restore-panel { border: 0; background: transparent; padding: 12px 0; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; }
 .restore-panel > details > summary h2 { font-size: 12px; font-weight: 500; }
 .restore-panel > details > summary .chip { font-size: 10px; padding: 1px 6px; }
-.footer { border-top: 1px solid var(--border); padding: 14px 0 24px; }
-.local-note { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-.local-note .icon { width: 13px; height: 13px; }
-.footer summary { font-size: 10px; }
 .settings-dialog { width: min(560px, calc(100% - 24px)); height: min(860px, calc(100dvh - 24px)); max-height: calc(100dvh - 24px); max-width: none; margin: auto; border: 1px solid var(--border); border-radius: 16px; padding: 0; background: var(--surface); color: var(--text); box-shadow: 0 20px 80px rgb(0 0 0 / 20%); overflow: hidden; }
 .settings-dialog[open] { display: flex; flex-direction: column; }
 .settings-dialog::backdrop { background: rgb(12 20 32 / 42%); backdrop-filter: blur(3px); }
 .settings-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 20px 12px; }
-.settings-header .eyebrow { margin-bottom: 2px; }
 .settings-header h2 { font-size: 22px; }
 .settings-tabs { display: flex; gap: 8px; padding: 0 20px; border-bottom: 1px solid var(--border); }
 .settings-tabs button { flex: 1; padding: 12px 4px; border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); }
@@ -320,11 +313,6 @@ button.utility-link { border: none; background: transparent; padding: 4px 0; col
 @media (max-width: 480px) {
   .app { padding: 0 12px; }
   .header { padding: 12px 0; }
-  .header h1 { font-size: 14px; }
-  .brand { gap: 7px; }
-  .brand-icon { width: 28px; height: 28px; border-radius: 8px; }
-  .header-actions { gap: 2px; }
-  .check-status { font-size: 10px; padding: 2px 5px; }
   .panel { padding: 14px; border-radius: 12px; }
   .results-panel { padding-bottom: 0; }
   .section-heading { margin-bottom: 10px; }
@@ -344,9 +332,16 @@ button.utility-link { border: none; background: transparent; padding: 4px 0; col
   .checks { gap: 8px; }
   .checks label { font-size: 12px; padding: 8px; }
 }
-@media (max-width: 350px) {
-  .header h1 { font-size: 13px; }
-  .check-status { font-size: 9px; padding: 2px 4px; }
-  .brand-icon { width: 24px; height: 24px; }
-  .brand { gap: 5px; }
-}
+
+/* 取り消せない操作は朱で示し、押す前に確認を挟む。 */
+button.danger { background: var(--danger); color: var(--surface); border-color: var(--danger); font-weight: 600; }
+button.danger:hover:not(:disabled) { background: var(--danger); border-color: var(--danger); filter: brightness(.94); }
+.confirm-dialog { width: min(360px, calc(100% - 32px)); border: 1px solid var(--border); border-radius: 14px; padding: 20px; background: var(--surface); color: var(--text); box-shadow: 0 16px 48px rgb(10 16 14 / 24%); }
+.confirm-dialog::backdrop { background: rgb(10 16 14 / 40%); }
+.confirm-dialog h2 { font-size: 15px; margin-bottom: 8px; }
+.confirm-dialog p { font-size: 13px; color: var(--muted); margin: 0 0 20px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm-actions button { min-width: 96px; }
+.data-notes { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.data-notes ul { margin: 10px 0 0; }
+

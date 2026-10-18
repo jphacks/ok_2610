@@ -111,6 +111,12 @@ describe('安全な停止（SF-02）', () => {
     expect(r.risks[0]?.level).toBe('評価不能');
   });
 
+  test('空入力ではエンジンを呼ばないので、エンジンの失敗として数えない', async () => {
+    const r = await run('  ', { settings: settings({ profile: ['rule', 'ner'] }) });
+    expect(r.blockers.map((b) => b.kind)).toEqual(['empty']);
+    expect(r.engines.find((e) => e.engine === 'ner')?.status).toBe('skipped');
+  });
+
   test('空入力は解析せず止める', async () => {
     expect((await run('  ')).blockers.map((b) => b.kind)).toContain('empty');
   });
