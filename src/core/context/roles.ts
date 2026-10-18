@@ -1,5 +1,5 @@
 import type { Certainty, Evidence, Role } from '../model/types';
-import { DATE_ROLE_CUES, EXAMPLE_CUES } from '../detect/vocab';
+import { DATE_ROLE_CUES, DATE_ROLE_SUFFIX, EXAMPLE_CUES } from '../detect/vocab';
 
 const BEFORE_WINDOW = 20;
 const AFTER_WINDOW = 30;
@@ -33,6 +33,10 @@ export type RoleResult = { role: Role; certainty: Certainty; evidence: Evidence[
 export function classifyDateRole(text: string, start: number, end: number): RoleResult {
   const { before, after } = sentenceWindow(text, start, end);
   let best: { role: RoleCue['role']; distance: number; word: string } | null = null;
+  for (const [role, re] of Object.entries(DATE_ROLE_SUFFIX) as [RoleCue['role'], RegExp][]) {
+    const m = re.exec(after);
+    if (m) best = { role, distance: 0, word: m[0].trim() };
+  }
   for (const cue of CUES) {
     for (const m of before.matchAll(cue.re)) {
       const distance = before.length - ((m.index ?? 0) + m[0].length);

@@ -17,6 +17,10 @@ const LABEL_TO_CATEGORY: Record<string, Category> = {
 };
 
 const MIN_SCORE = 0.6;
+const NON_ORG_WORDS = new Set([
+  'ネイビー', 'グレー', 'ベージュ', 'ブラック', 'ホワイト', 'シルバー', 'ゴールド', 'レッド', 'ブルー', 'グリーン', 'ピンク', 'ブラウン', 'イエロー',
+  'オレンジ', 'パープル', 'カーキ', 'アイボリー',
+]);
 const LEADING_TRIM = /^[\s、。,.・の]+/u;
 const TRAILING_TRIM = /(?:[\s、。,.・]|さん|様|さま|氏|殿|くん|君|ちゃん|先生|の|は|が|を|に|で|と|へ|も)+$/u;
 
@@ -65,6 +69,16 @@ export function entitiesToSpans(text: string, tokens: NerToken[], offset = 0): S
       groups.push([a]);
     }
   }
+  // 空白で区切られた姓と名（「ササキ ユウコ」「森 蓮」）は、どちらも確信度の足りる人名なら1つの人名にする
+  const confident = (g: Aligned[]) => g.reduce((s, a) => s + a.score, 0) / g.length >= MIN_SCORE;
+  for (let i = groups.length - 1; i > 0; i--) {
+    const prev = groups[i - 1]!;
+    const cur = groups[i]!;
+    const gap = text.slice(prev.at(-1)!.end, cur[0]!.start);
+    if (prev[0]!.label === 'PER' && cur[0]!.label === 'PER' && /^[^\S\n]$/u.test(gap) && confident(prev) && confident(cur)) {
+      groups.splice(i - 1, 2, [...prev, ...cur]);
+    }
+  }
   const spans: Span[] = [];
   for (const g of groups) {
     const first = g[0];
@@ -72,8 +86,8 @@ export function entitiesToSpans(text: string, tokens: NerToken[], offset = 0): S
     if (!first || !last) continue;
     const category = LABEL_TO_CATEGORY[first.label];
     if (!category) continue;
+    if (!confident(g)) continue;
     const score = g.reduce((s, a) => s + a.score, 0) / g.length;
-    if (score < MIN_SCORE) continue;
     let start = first.start;
     let end = last.end;
     const value = text.slice(start, end);
@@ -83,11 +97,16 @@ export function entitiesToSpans(text: string, tokens: NerToken[], offset = 0): S
     end -= trail;
     if (end - start < 1 || (category !== 'personName' && end - start < 2)) continue;
     // 「御中」「各位」などを人名と判定することがあるため、規則と同じ語彙で外す
-    if (category === 'personName' && NON_NAME_BEFORE_HONORIFIC.has(text.slice(start, end).replace(/\s/gu, ''))) continue;
+    const found = text.slice(start, end);
+    if (category === 'personName' && NON_NAME_BEFORE_HONORIFIC.has(found.replace(/\s/gu, ''))) continue;
+    // 社員番号・ユーザーIDなどの英数字（S58330・kenta0412）を人名と判定することがある。隠す必要はあるのでIDとして扱う
+    const idLike = category === 'personName' && /^[A-Za-z0-9._-]+$/u.test(found) && /\d/u.test(found);
+    // 色の名前（ネイビー・グレー）を組織と判定することがある
+    if (category === 'orgName' && NON_ORG_WORDS.has(found)) continue;
     spans.push({
       start: start + offset,
       end: end + offset,
-      category,
+      category: idLike ? 'customerId' : category,
       source: 'ner',
       certainty: '推定',
       evidence: [{ kind: 'model', detail: `NERモデルが${first.label}と判定（確信度 ${score.toFixed(2)}）` }],

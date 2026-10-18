@@ -26,6 +26,8 @@ const KATA = '\\p{Script=Katakana}ー';
 const NAME_CH = `${HAN}${KATA}・A-Za-z0-9&`;
 const PREF_ALT = PREFECTURES.join('|');
 const HONORIFICS = 'さん|様|さま|氏|殿|くん|君|ちゃん|先生';
+/** ひらがなで始まる組織名の先頭部分（さくら・ひかり・みなと）。助詞を含むものは名前ではない */
+const HIRA_NAME = `(?!という|として|とは|との|から|より|など)(?:(?![のはがをにでへ])[${HIRA}]){2,6}`;
 
 type Rule = {
   id: string;
@@ -38,7 +40,7 @@ type Rule = {
   evidence: Evidence;
   validate?: (value: string, text: string, start: number, end: number) => boolean;
   /** 検出範囲を調整する（先頭の役職名を外すなど） */
-  adjust?: (value: string, start: number) => { start: number; end: number } | null;
+  adjust?: (value: string, start: number, text: string) => { start: number; end: number } | null;
   sensitiveKind?: SensitiveKind;
 };
 
@@ -49,12 +51,18 @@ function re(source: string, flags = 'gdu'): RegExp {
 const pattern = (detail: string): Evidence => ({ kind: 'pattern', detail });
 const label = (detail: string): Evidence => ({ kind: 'label', detail });
 
-const NAME_LEADING_WORDS = new RegExp(`^(?:${POSITIONS}|担当|受付|窓口|係|店員|お客様|弊社|御社|貴社)+`, 'u');
+const NAME_LEADING_WORDS = new RegExp(
+  `^(?:${POSITIONS}|担当者?|受付|窓口|係|店員|お客様|弊社|御社|貴社|契約者|利用者|患者|申込者|購入者|入居者|相談者|依頼者|会員|社員|同僚|部下|上司)+`,
+  'u',
+);
 const NON_NAME_ENDING = /[者員長師様方人家側客族社店部課係]$/u;
 
-function trimNameLeading(value: string, start: number): { start: number; end: number } | null {
+function trimNameLeading(value: string, start: number, text: string): { start: number; end: number } | null {
   const m = NAME_LEADING_WORDS.exec(value);
-  const cut = m ? m[0].length : 0;
+  let cut = m ? m[0].length : 0;
+  // 「ひかり通信 三浦亮様」のように前の語の途中から始まっていたら、空白の後だけを名前にする
+  const space = value.search(/\s/u);
+  if (!m && space > 0 && /[\p{Script=Hiragana}\p{Script=Han}\p{Script=Katakana}]/u.test(text[start - 1] ?? '')) cut = space + 1;
   const name = value.slice(cut).trim();
   if (!name) return null;
   const offset = value.indexOf(name, cut);
@@ -89,6 +97,43 @@ const NON_ORG = new Set([
   '公立高校', '私立高校', '県立高校', '都立高校', '大学', '高校', '病院', '銀行', '証券', '薬局', '歯科', '医院',
 ]);
 
+/** 「型番HM-2665」「HM-2665とHM-284の互換性」は製品の型番で、注文番号ではない */
+const MODEL_NUMBER_BEFORE = /(?:型番|品番|型式|機種|製品番号|部品番号|モデル)\s*[:：は]?\s*$/u;
+const MODEL_NUMBER_AFTER = /^(?:と[A-Z]{2,5}-\d+)?の?(?:互換|後継|部品|在庫|仕様)/u;
+const PRODUCT_CODE_BEFORE = /(?:商品コード|JANコード|JAN|品番|型番|コード)\s*[:：は]?\s*$/u;
+/** マイナンバーの検査数字が偶然合う、別の種類の番号 */
+const OTHER_NUMBER_BEFORE = /(?:注文|伝票|追跡|荷物|問い?合わ?せ|予約|受付|管理|契約|申込|会員|顧客|社員|免許証|保険証|旅券|パスポート|口座)(?:番号|ID|No\.?)?\s*[:：は]?\s*$/u;
+/** 「村」「町」で終わる姓（中村・西村など）。市区町村の形でも、人名の一部のことが多い */
+const SURNAME_LIKE_PLACE = new Set([
+  '中村', '西村', '木村', '田村', '北村', '松村', '野村', '岡村', '今村', '川村', '吉村', '上村', '下村', '河村', '奥村', '植村', '大村', '小村',
+  '三村', '志村', '竹村', '市村', '島村', '藤村', '高村', '東村', '杉村', '中町', '大町', '小町',
+]);
+/** 「病院」「銀行」などの前に来ても名前ではない語 */
+const NON_ORG_LEADING = /^(?:近く|大きな|小さな|地元|最寄り|かかりつけ|いつも|この|その|あの|どの|同じ|別の)/u;
+/** 敬称の形でも、後ろに続いて別の語になるもの（模様替え・様式・様子・様々） */
+const NOT_HONORIFIC_AFTER = '替|式|子|々|相|態|化';
+/** 稀な特徴の前に付いて、絞り込む範囲を示す語（社内最年少の・その職種で唯一の） */
+const RARE_SCOPE = `社内|部内|店内|校内|院内|学内|部署|店舗|支店|職場|チーム|クラス|学年|地域|業界|その[${HAN}]{1,4}`;
+/** 機微な語と一続きで意味をなす前後の語（持病の喘息・がんの治療・ストーカー被害） */
+const SENSITIVE_PREFIX = '持病の|腰の|膝の|夫と|妻と|電動|信仰している';
+const SENSITIVE_SUFFIX = `の治療|の手術|被害|中(?![${HAN}])`;
+
+/** メールアドレスの前に電話番号がくっついているとき（「0888-8150takahashi70@…」）は、番号の後から始める */
+function trimGluedPhone(value: string, start: number): { start: number; end: number } {
+  const m = /^[0-9-]*\d{4}(?=[A-Za-z])/u.exec(value);
+  const cut = m && m[0].replace(/\D/g, '').length >= 7 ? m[0].length : 0;
+  return { start: start + cut, end: start + value.length };
+}
+
+const ORG_TAIL = new RegExp(`(?:(?:${DEPARTMENT_CORE})(?:${DEPARTMENT_SUFFIX})|訪問.*|担当.*|御中)$`, 'u');
+
+/** 「株式会社北斗物産人事部」「三つ葉商事株式会社訪問」のように後ろの語まで続いたら、その手前で切る */
+function trimOrgTail(value: string, start: number): { start: number; end: number } | null {
+  const m = ORG_TAIL.exec(value);
+  const end = m ? m.index : value.length;
+  return end > 0 ? { start, end: start + end } : null;
+}
+
 const RULES: Rule[] = [
   // --- 認証情報（FR-04）---
   {
@@ -102,7 +147,7 @@ const RULES: Rule[] = [
   {
     id: 'credential-label',
     category: 'credential',
-    re: re('(?:パスワード|password|Password|PASSWORD|暗証番号|PIN|APIキー|API key|アクセスキー|トークン|token|secret|シークレット|セキュリティコード|CVV|CVC)\\s*[:：=は]\\s*([^\\s、。,]{3,})'),
+    re: re('(?:パスワード|password|Password|PASSWORD|暗証番号|PIN|APIキー|API key|アクセスキー|トークン|token|secret|シークレット|セキュリティコード|CVV|CVC)\\s*[:：=は]\\s*([^\\s、。,，()（）「」『』\\p{Script=Hiragana}]{3,})'),
     group: 1,
     tier: TIER.certainRule,
     certainty: '確定',
@@ -116,6 +161,16 @@ const RULES: Rule[] = [
     tier: TIER.certainRule,
     certainty: '確定',
     evidence: pattern('メールアドレスの形式'),
+    adjust: trimGluedPhone,
+  },
+  {
+    id: 'email-obfuscated',
+    category: 'email',
+    re: re('[A-Za-z0-9._%+-]+\\s?(?:@|\\[at\\]|\\(at\\)|\\{at\\}|<at>|\\[アット\\]|\\(アット\\)|アットマーク)\\s?[A-Za-z0-9-]+(?:\\s?(?:\\.|\\[dot\\]|\\(dot\\))\\s?[A-Za-z0-9-]+)+'),
+    tier: TIER.certainRule,
+    certainty: '確定',
+    evidence: pattern('難読化したメールアドレスの形式（[at] など）'),
+    adjust: trimGluedPhone,
   },
   {
     id: 'url',
@@ -140,7 +195,7 @@ const RULES: Rule[] = [
     tier: TIER.certainRule,
     certainty: '確定',
     evidence: { kind: 'checksum', detail: 'カード番号の検査数字（Luhn）が一致' },
-    validate: (v) => luhnValid(v),
+    validate: (v, text, start) => luhnValid(v) && !PRODUCT_CODE_BEFORE.test(text.slice(Math.max(0, start - 8), start)),
   },
   {
     id: 'mynumber-label',
@@ -158,7 +213,7 @@ const RULES: Rule[] = [
     tier: TIER.heuristicRule,
     certainty: '推定',
     evidence: { kind: 'checksum', detail: 'マイナンバーの検査数字が一致' },
-    validate: (v) => myNumberValid(v),
+    validate: (v, text, start) => myNumberValid(v) && !OTHER_NUMBER_BEFORE.test(text.slice(Math.max(0, start - 12), start)),
   },
   {
     id: 'id-number',
@@ -172,7 +227,7 @@ const RULES: Rule[] = [
   {
     id: 'phone',
     category: 'phone',
-    re: re('(?<![\\d-])(?:\\+81[- ]?\\d{1,4}[- ]?\\d{1,4}[- ]?\\d{3,4}|0120-?\\d{2,3}-?\\d{3}|0[5789]0-?\\d{4}-?\\d{4}|\\(0\\d{1,4}\\)\\s?\\d{1,4}-\\d{3,4}|0\\d{1,4}-\\d{1,4}-\\d{3,4}|0\\d{9,10})(?![\\d-])'),
+    re: re('(?<![\\d-])(?:\\+81[- ]?\\d{1,4}[- ]?\\d{1,4}[- ]?\\d{3,4}|0120-?\\d{2,3}-?\\d{3}|0[5789]0-?\\d{4}-?\\d{4}|\\(0\\d{1,4}\\)\\s?\\d{1,4}-?\\d{3,4}|0\\d{1,4}-\\d{1,4}-\\d{3,4}|0\\d{1,4}\\(\\d{1,4}\\)\\d{3,4}|0\\d{1,4}([. ])\\d{1,4}\\1\\d{3,4}|0\\d{9,10})(?![\\d-])'),
     tier: TIER.certainRule,
     certainty: '確定',
     evidence: pattern('電話番号の形式'),
@@ -180,7 +235,7 @@ const RULES: Rule[] = [
   {
     id: 'postal',
     category: 'postalCode',
-    re: re('(?:〒\\s?|郵便番号\\s*[:：]?\\s*)(\\d{3}-?\\d{4})'),
+    re: re('(?:〒\\s?|郵便番号\\s*(?:[:：]|は)?\\s*)(\\d{3}-?\\d{4})(?!\\d)'),
     group: 1,
     tier: TIER.certainRule,
     certainty: '確定',
@@ -197,7 +252,7 @@ const RULES: Rule[] = [
   {
     id: 'order-label',
     category: 'orderNumber',
-    re: re('(?:ご?注文番号|注文ID|オーダー番号|受注番号|伝票番号|お問い?合わ?せ番号|問合せ番号|予約番号|追跡番号|お荷物番号|受付番号|管理番号|契約番号|申込番号)\\s*[:：は]?\\s*([A-Za-z0-9][A-Za-z0-9-]{3,})'),
+    re: re('(?:ご?注文番号|注文ID|オーダー番号|受注番号|伝票番号|お?問い?合わ?せ番号|予約番号|追跡番号|お荷物番号|受付番号|管理番号|契約番号|申込番号)\\s*[:：は]?\\s*([A-Za-z0-9][A-Za-z0-9-]{3,})'),
     group: 1,
     tier: TIER.certainRule,
     certainty: '確定',
@@ -210,6 +265,8 @@ const RULES: Rule[] = [
     tier: TIER.heuristicRule,
     certainty: '推定',
     evidence: pattern('英字と数字の管理番号の形'),
+    validate: (_v, text, start, end) =>
+      !MODEL_NUMBER_BEFORE.test(text.slice(Math.max(0, start - 6), start)) && !MODEL_NUMBER_AFTER.test(text.slice(end, end + 12)),
   },
   {
     id: 'customer-id',
@@ -219,6 +276,16 @@ const RULES: Rule[] = [
     tier: TIER.certainRule,
     certainty: '確定',
     evidence: label('直前に会員やアカウントの番号を示す語'),
+  },
+  {
+    // ログの「user=kenta0412」「login: tanaka01」
+    id: 'customer-id-log',
+    category: 'customerId',
+    re: re('(?<![A-Za-z])(?:user|username|userid|user_id|uid|login|account)\\s*[=:]\\s*([A-Za-z0-9._-]{3,})', 'gdui'),
+    group: 1,
+    tier: TIER.certainRule,
+    certainty: '確定',
+    evidence: label('直前に「user=」などのログの項目名'),
   },
   {
     id: 'account-handle',
@@ -305,24 +372,37 @@ const RULES: Rule[] = [
     tier: TIER.certainRule,
     certainty: '確定',
     evidence: label('直前に「住所」などの見出し'),
+    // 先頭の「〒621-1514」は郵便番号として別に検出する
+    adjust: (v, start) => {
+      const head = /^〒?\s?\d{3}-?\d{4}\s*/u.exec(v)?.[0].length ?? 0;
+      return head < v.length ? { start: start + head, end: start + v.length } : null;
+    },
+    // 「お届け先：山本裕子様」のように、見出しの後が宛名だけのものは住所ではない
+    validate: (v) => /[都道府県市区町村郡0-9０-９]/u.test(v) && !new RegExp(`(?:${HONORIFICS})$`, 'u').test(v),
   },
   {
     id: 'address-shape',
     category: 'address',
-    re: re(`(?:${PREF_ALT})?[${HAN}${KATA}のノヶケ]{1,15}?[0-9一二三四五六七八九十]{1,4}(?:丁目|番地|番|号|-)(?:[0-9]{1,5}(?:番地|番|号|-)?){0,3}(?:\\s?[${HAN}${KATA}A-Za-z]{1,15}?[0-9]{2,4}(?:号室)?)?`),
+    // 町名・建物名はひらがなを含みうる（美しが丘・ハイツみどり）
+    re: re(`(?:${PREF_ALT})?[${HAN}${KATA}${HIRA}ヶケ]{1,15}?[0-9一二三四五六七八九十]{1,4}(?:丁目|番地|番|号|-)(?:[0-9]{1,5}(?:番地|番|号|-)?){0,3}(?:\\s?[${HAN}${KATA}${HIRA}A-Za-z]{1,15}?[0-9]{2,4}(?:号室)?)?`),
     tier: TIER.heuristicRule,
     certainty: '推定',
     evidence: pattern('丁目・番地などを含む住所の形'),
     validate: (v) => /[都道府県市区町村郡]/u.test(v.split(/[0-9一二三四五六七八九十]/u)[0] ?? ''),
     adjust: (v, start) => {
-      // 「私の東京都…」のように前の語を巻き込んだら、都道府県か最後の「の」の後から始める
+      // 「私の東京都…」のように前の語を巻き込んだら、都道府県か、市区町村の前の最後のひらがなの後から始める
       const pref = PREFECTURES.map((p) => v.indexOf(p)).filter((i) => i >= 0).sort((a, b) => a - b)[0];
       if (pref !== undefined) return { start: start + pref, end: start + v.length };
       const head = v.split(/[0-9一二三四五六七八九十]/u)[0] ?? '';
       const cityIdx = head.search(/[市区町村郡]/u);
-      const no = head.lastIndexOf('の', cityIdx);
-      const cut = no >= 0 && no < cityIdx ? no + 1 : 0;
-      return { start: start + cut, end: start + v.length };
+      let cut = 0;
+      for (let i = cityIdx - 1; i >= 0; i--) {
+        if (/\p{Script=Hiragana}/u.test(head[i] ?? '')) {
+          cut = i + 1;
+          break;
+        }
+      }
+      return cut < cityIdx ? { start: start + cut, end: start + v.length } : null;
     },
   },
   {
@@ -348,7 +428,16 @@ const RULES: Rule[] = [
     tier: TIER.heuristicRule,
     certainty: '推定',
     evidence: pattern('市区町村の形'),
-    validate: (v) => !NON_PLACE.has(v),
+    validate: (v) => !NON_PLACE.has(v) && !SURNAME_LIKE_PLACE.has(v),
+  },
+  {
+    // 市区町村の形から外した「村」で終わる姓（「ソラリスの中村ですが」）。地名の手がかり（在住・出身など）が続くときは除く
+    id: 'surname-like-place',
+    category: 'personName',
+    re: re(`(?<![${HAN}])(?:${[...SURNAME_LIKE_PLACE].filter((s) => s.endsWith('村')).join('|')})(?![${HAN}]|在住|出身)`),
+    tier: TIER.heuristicRule,
+    certainty: '推定',
+    evidence: { kind: 'vocabulary', detail: 'よくある姓' },
   },
   {
     id: 'residence',
@@ -364,15 +453,18 @@ const RULES: Rule[] = [
   {
     id: 'org-form-prefix',
     category: 'orgName',
-    re: re(`(?:${ORG_FORM})\\s?[${NAME_CH}]{1,20}`),
+    // 法人の種類は名前の先頭にある（「三つ葉商事株式会社 経営企画室」の後半を社名にしない）。改行はまたがない
+    re: re(`(?<![${NAME_CH}])(?:${ORG_FORM})[ \\u3000]?(?:${HIRA_NAME})?[${NAME_CH}]{1,20}`),
     tier: TIER.heuristicRule,
     certainty: '確定',
     evidence: pattern('法人の種類（株式会社など）を含む'),
+    adjust: trimOrgTail,
   },
   {
     id: 'org-form-suffix',
     category: 'orgName',
-    re: re(`(?<![${NAME_CH}])[${NAME_CH}]{1,20}\\s?(?:株式会社|有限会社|合同会社|（株）|\\(株\\)|（有）|\\(有\\))`),
+    // 名前の途中のひらがな1文字（三つ葉商事）は許す
+    re: re(`(?<![${NAME_CH}])(?:${HIRA_NAME})?[${NAME_CH}](?:[${NAME_CH}]|(?![のはがをにでへともや])[${HIRA}](?=[${NAME_CH}])){0,19}[ \\u3000]?(?:株式会社|有限会社|合同会社|（株）|\\(株\\)|（有）|\\(有\\))`),
     tier: TIER.heuristicRule,
     certainty: '確定',
     evidence: pattern('法人の種類（株式会社など）を含む'),
@@ -380,11 +472,12 @@ const RULES: Rule[] = [
   {
     id: 'org-suffix',
     category: 'orgName',
-    re: re(`(?<![${NAME_CH}])[${NAME_CH}]{1,15}(?:${ORG_SUFFIX})`),
+    // ひらがなで始まる名前（さくら内科クリニック・みなと信用金庫）も拾う
+    re: re(`(?<![${NAME_CH}])(?:${HIRA_NAME})?[${NAME_CH}]{0,15}(?:${ORG_SUFFIX})`),
     tier: TIER.heuristicRule,
     certainty: '推定',
     evidence: pattern('銀行・学校・病院などの名前の形'),
-    validate: (v) => !NON_ORG.has(v),
+    validate: (v) => !NON_ORG.has(v) && !NON_ORG_LEADING.test(v),
   },
   {
     id: 'org-kana-bank',
@@ -397,7 +490,8 @@ const RULES: Rule[] = [
   {
     id: 'store',
     category: 'store',
-    re: re(`(?<![${NAME_CH}])[${HAN}${KATA}A-Za-z0-9]{1,10}(?:${STORE_SUFFIX})(?![${HAN}])`),
+    // 名前の途中のひらがな（柏の葉店・国際通り店）は許す。「神戸市の川崎工場」「補聴器で来店」のように語はまたがない
+    re: re(`(?<![${NAME_CH}])(?:[${HAN}${KATA}]{1,2}の(?=[${HAN}${KATA}]))?(?:[${HAN}${KATA}A-Za-z0-9]|(?![のはがをにでへともや])[${HIRA}](?=[${HAN}${KATA}])){1,10}(?:${STORE_SUFFIX})(?![${HAN}])`),
     tier: TIER.heuristicRule,
     certainty: '推定',
     evidence: pattern('店舗・拠点の名前の形（〜店など）'),
@@ -406,11 +500,21 @@ const RULES: Rule[] = [
   {
     id: 'department',
     category: 'department',
-    re: re(`[${HAN}${KATA}A-Za-z]{0,8}?(?:${DEPARTMENT_CORE})(?:${DEPARTMENT_SUFFIX})`),
+    // 前に付く語は漢字・英字だけ（「第一営業部」「IT推進室」）。カタカナは社名の末尾のことが多い（ミナトシステム人事部）
+    re: re(`[${HAN}A-Za-z]{0,6}?(?:${DEPARTMENT_CORE})(?:${DEPARTMENT_SUFFIX})`),
     tier: TIER.heuristicRule,
     certainty: '推定',
     evidence: { kind: 'vocabulary', detail: '部署名の語' },
-    validate: (v) => !NON_DEPARTMENT.has(v),
+    // 前の社名や「先方」は部署名に含めない。「〜物流センター」は拠点（店舗の規則で拾う）
+    adjust: (v, start, text) => {
+      // 社名の途中から始まることがあるため（「株式会社北斗物産人事部」）、少し前から社名の終わりを探す
+      const from = Math.max(0, start - 8);
+      const orgEnd = /^.*(?:株式会社|有限会社|合同会社|銀行|大学|病院|商事|物産)/u.exec(text.slice(from, start + v.length))?.[0].length ?? 0;
+      let cut = Math.max(0, from + orgEnd - start);
+      cut += /^(?:先方|弊社|当社|御社|貴社|同社)+/u.exec(v.slice(cut))?.[0].length ?? 0;
+      return cut < v.length ? { start: start + cut, end: start + v.length } : null;
+    },
+    validate: (v) => !NON_DEPARTMENT.has(v) && !/物流センター$/u.test(v),
   },
   {
     id: 'position',
@@ -433,13 +537,36 @@ const RULES: Rule[] = [
   {
     id: 'name-honorific',
     category: 'personName',
-    re: re(`(?<![${HAN}${KATA}])((?:(?:[${HAN}]{1,4}(?:[ \\u3000]?[${HAN}]{1,3})?)|(?:[${KATA}]{2,10}(?:[ \\u3000・][${KATA}]{2,10})?))(?:[（(][${HIRA}${KATA} \\u3000]+[）)])?)(?=(?:${HONORIFICS}))`),
+    re: re(`(?<![${HAN}${KATA}])((?:(?:[${HAN}]{1,4}(?:[ \\u3000]?[${HAN}]{1,3})?)|(?:[${KATA}]{2,10}(?:[ \\u3000・][${KATA}]{2,10})?))(?:[（(][${HIRA}${KATA} \\u3000]+[）)])?)(?=(?:${HONORIFICS})(?!${NOT_HONORIFIC_AFTER}))`),
     group: 1,
     tier: TIER.certainRule,
     certainty: '推定',
     evidence: { kind: 'honorific', detail: '直後に敬称（さん・様など）' },
     adjust: trimNameLeading,
     validate: (v) => isPersonName(v),
+  },
+  {
+    // 漢字の姓＋ひらがなの名（中島あゆみ様・小鳥遊めぐみ様）
+    id: 'name-honorific-kana-given',
+    category: 'personName',
+    re: re(`(?<![${HAN}${KATA}${HIRA}])([${HAN}]{1,4}[ \\u3000]?[${HIRA}]{2,4})(?=(?:さん|様|さま|氏|殿|くん|ちゃん|先生)(?!${NOT_HONORIFIC_AFTER}))`),
+    group: 1,
+    tier: TIER.certainRule,
+    certainty: '推定',
+    evidence: { kind: 'honorific', detail: '直後に敬称（さん・様など）' },
+    adjust: trimNameLeading,
+    // 「皆さん様」「お客さま」のように、ひらがなの部分が敬称そのもののものは除く
+    validate: (v) => isPersonName(v) && !/(?:さん|さま|くん|ちゃん|たち|ども|どの)$/u.test(v),
+  },
+  {
+    // 口座の名義やフリガナ（名義 エンドウ クミコ／岡本大輔（オカモト ダイスケ））
+    id: 'name-kana-reading',
+    category: 'personName',
+    re: re(`(?:名義\\s*[:：]?\\s*|[${HAN}]{2,6}[（(])([${KATA}]{2,10}(?:[ \\u3000][${KATA}]{2,10})?)(?=[）)\\s、。,]|$)`),
+    group: 1,
+    tier: TIER.certainRule,
+    certainty: '推定',
+    evidence: label('口座の名義、または漢字の氏名に続くフリガナ'),
   },
   {
     id: 'name-self-intro',
@@ -463,6 +590,15 @@ const RULES: Rule[] = [
     evidence: label('直前に金額や契約条件を示す語'),
   },
   {
+    id: 'confidential-amount-verb',
+    category: 'confidential',
+    re: re('(?<![0-9,.])((?:¥|￥)[0-9,]+|[0-9][0-9,]*(?:\\.[0-9]+)?\\s*(?:万|億)\\s*円|[0-9]{1,3}(?:,[0-9]{3})+\\s*円)(?=を?(?:返金|振込|振り込|入金|送金|融資|借入|借り入れ|貸付|支払|請求))'),
+    group: 1,
+    tier: TIER.heuristicRule,
+    certainty: '推定',
+    evidence: { kind: 'context', detail: '直後に返金・振込などお金の動きを示す語' },
+  },
+  {
     id: 'confidential-marker',
     category: 'confidential',
     re: re('社外秘|部外秘|極秘|機密情報|未公表|未発表|内部資料|取扱注意|confidential|CONFIDENTIAL'),
@@ -474,7 +610,7 @@ const RULES: Rule[] = [
   {
     id: 'rare',
     category: 'rareTrait',
-    re: re(`(?:${RARE_CUES})`),
+    re: re(`(?:(?:${RARE_SCOPE})で?)?(?:${RARE_CUES})`),
     tier: TIER.heuristicRule,
     certainty: '推定',
     evidence: { kind: 'vocabulary', detail: '人物を絞り込める表現' },
@@ -483,7 +619,7 @@ const RULES: Rule[] = [
     ({ kind, words }): Rule => ({
       id: `sensitive-${kind}`,
       category: 'sensitive',
-      re: re(`(?:${words})`),
+      re: re(`(?:${SENSITIVE_PREFIX})?(?:${words})(?:${SENSITIVE_SUFFIX})?`),
       tier: TIER.heuristicRule,
       certainty: '推定',
       evidence: { kind: 'vocabulary', detail: SENSITIVE_DETAIL[kind] },
@@ -508,7 +644,7 @@ export function detectRules(text: string): Span[] {
       end = start + trimmed.length;
       value = trimmed;
       if (rule.adjust) {
-        const adjusted = rule.adjust(value, start);
+        const adjusted = rule.adjust(value, start, norm);
         if (!adjusted) continue;
         ({ start, end } = adjusted);
         value = norm.slice(start, end);
@@ -530,4 +666,4 @@ export function detectRules(text: string): Span[] {
   return spans;
 }
 
-export const RULE_ENGINE_VERSION = 'rule-1';
+export const RULE_ENGINE_VERSION = 'rule-2';

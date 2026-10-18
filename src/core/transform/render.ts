@@ -38,8 +38,6 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
   const restoreMap: Record<string, string> = {};
   const outputs = new Map<string, string>();
 
-  for (const e of entities) restoreMap[e.label] = e.canonical;
-
   const sorted = [...candidates].sort((a, b) => a.start - b.start);
   for (const c of sorted) {
     const category = primaryCategory(c.categories);
@@ -62,6 +60,8 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
         const entity = c.entityId ? entityById.get(c.entityId) : undefined;
         if (entity) {
           out = entity.label;
+          // 出力に現れるラベルだけを対応表に入れる。一般化で消えた対象のラベルをAIが偶然書いても、原文を戻さない
+          restoreMap[out] = entity.canonical;
         } else {
           const key = `${category}|${mentionKey(c.text)}`;
           out = pseudonyms.get(key) ?? allocate(info.pseudonymPrefix ?? categoryLabel(category), (p, n) => `${p}${letterLabel(n)}`);
