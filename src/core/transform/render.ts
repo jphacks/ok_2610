@@ -8,6 +8,8 @@ export type RenderResult = {
   segments: OutputSegment[];
   /** ラベル → 原文（復元用）。一般化・削除したものは含めない */
   restoreMap: Record<string, string>;
+  /** 一般化した語 → 原文（復元用）。元の語が1つに決まり、加工後の文章でほかに現れない語だけ */
+  generalizedMap: Record<string, string>;
   outputs: Map<string, string>;
 };
 
@@ -37,6 +39,8 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
   const pseudonyms = new Map<string, string>();
   const restoreMap: Record<string, string> = {};
   const outputs = new Map<string, string>();
+  /** 一般化した語 → 原文の候補と出現数 */
+  const generalized = new Map<string, { originals: Set<string>; count: number }>();
 
   const sorted = [...candidates].sort((a, b) => a.start - b.start);
   for (const c of sorted) {
@@ -74,6 +78,12 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
         const g = generalize(c.text, category, c.action.level, c.sensitiveKind);
         if (g !== null) {
           out = g;
+          if (g !== c.text) {
+            const entry = generalized.get(g) ?? { originals: new Set<string>(), count: 0 };
+            entry.originals.add(c.text);
+            entry.count++;
+            generalized.set(g, entry);
+          }
           break;
         }
         out = labelFor(category, c.text);
@@ -115,5 +125,17 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
     segments.push({ kind: 'plain', text: plain });
     masked += plain;
   }
-  return { masked, segments, restoreMap, outputs };
+  // 複数の語が同じ語に一般化された、または同じ語が加工後の文章のほかの所にもある場合は、戻す先が決まらないので入れない
+  const generalizedMap: Record<string, string> = {};
+  for (const [g, { originals, count }] of generalized) {
+    const [original] = originals;
+    if (originals.size === 1 && original !== undefined && countOccurrences(masked, g) === count) generalizedMap[g] = original;
+  }
+  return { masked, segments, restoreMap, generalizedMap, outputs };
+}
+
+function countOccurrences(text: string, word: string): number {
+  let n = 0;
+  for (let i = text.indexOf(word); i !== -1; i = text.indexOf(word, i + 1)) n++;
+  return n;
 }

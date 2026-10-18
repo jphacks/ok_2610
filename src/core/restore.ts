@@ -1,9 +1,12 @@
 // AIの回答に含まれる仮ラベルを、対応表で原文の語に戻す（ARCHITECTURE.md §11-3）。
-// 戻すのは仮ラベル・カテゴリラベルだけ。一般化や削除で消えた情報は戻さない。
+// 一般化した語（30代・東京都 など）も、元の語が1つに決まるものは戻す。削除で消えた情報は戻さない。
 
 export type RestoreResult = {
   restored: string;
+  /** 戻した箇所の数（一般化した語を含む） */
   replacedCount: number;
+  /** 一般化から戻した語（AIが一般的な意味で使った語も戻るので、利用者が確かめられるよう示す） */
+  generalized: { from: string; to: string }[];
   /** ラベルらしい形なのに対応表にないもの（AIが書き換えた可能性） */
   unmatched: string[];
 };
@@ -49,21 +52,39 @@ function findRewrites(text: string, labels: string[]): string[] {
   return [...text.matchAll(new RegExp(alts.join('|'), 'gu'))].map((m) => m[0]);
 }
 
-export function restoreLabels(text: string, restoreMap: Record<string, string>): RestoreResult {
-  const labels = Object.keys(restoreMap).sort((a, b) => b.length - a.length);
+/** 「30代」が「130代」に、「2020年」が「2020年代」に、「10月」が「10月5日」の一部に当たらないようにする */
+function generalizedPattern(word: string): string {
+  const before = /^[0-9０-９]/u.test(word) ? '(?<![0-9０-９])' : '';
+  const after = /年$/u.test(word) ? '(?![0-9０-９代度])' : /[0-9０-９代月]$/u.test(word) ? '(?![0-9０-９])' : '';
+  return `${before}${escapeRegExp(word)}${after}`;
+}
+
+export function restoreLabels(text: string, restoreMap: Record<string, string>, generalizedMap: Record<string, string> = {}): RestoreResult {
+  const labels = Object.keys(restoreMap);
+  const words = Object.keys(generalizedMap).filter((w) => !(w in restoreMap));
+  // 長い語を先に当てる。ラベルと一般化した語は1回の置き換えで戻し、戻した原文をもう一度置き換えない
+  const keys = [...labels.map((l) => ({ key: l, label: true })), ...words.map((w) => ({ key: w, label: false }))].sort((a, b) => b.key.length - a.key.length);
   let replacedCount = 0;
+  const generalized = new Map<string, string>();
   let restored = text;
   let rest = text;
-  if (labels.length > 0) {
+  if (keys.length > 0) {
     // 「人物A」が「人物AB」の一部に当たらないよう、英字が続く場合は除く
-    const re = new RegExp(labels.map((l) => `${escapeRegExp(l)}${/[A-Z]$/.test(l) ? '(?![A-Za-z])' : ''}`).join('|'), 'gu');
+    const re = new RegExp(
+      keys.map(({ key, label }) => (label ? `${escapeRegExp(key)}${/[A-Z]$/.test(key) ? '(?![A-Za-z])' : ''}` : generalizedPattern(key))).join('|'),
+      'gu',
+    );
     restored = text.replace(re, (m) => {
       replacedCount++;
-      return restoreMap[m] ?? m;
+      const label = restoreMap[m];
+      if (label !== undefined) return label;
+      const original = generalizedMap[m] ?? m;
+      generalized.set(m, original);
+      return original;
     });
     rest = text.replace(re, REPLACED);
   }
   const unknown = [...rest.matchAll(LABEL_LIKE)].map((m) => m[0]).filter((l) => !(l in restoreMap));
   const unmatched = [...new Set([...unknown, ...findRewrites(rest, labels)])];
-  return { restored, replacedCount, unmatched };
+  return { restored, replacedCount, generalized: [...generalized].map(([from, to]) => ({ from, to })), unmatched };
 }

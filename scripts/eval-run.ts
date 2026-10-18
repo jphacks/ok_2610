@@ -61,6 +61,7 @@ for (const s of samples) {
       id: s.id,
       masked: r.masked,
       restoreMap: r.restoreMap,
+      generalizedMap: r.generalizedMap,
       cands: r.candidates.map((c) => ({ start: c.start, end: c.end, text: c.text, categories: c.categories, role: c.role ?? null, output: c.output })),
     }),
   );

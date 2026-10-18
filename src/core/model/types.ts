@@ -291,4 +291,6 @@ export type AnalysisResult = {
   contentId: string;
   /** 復元用の対応表（ラベル → 原文）。サイドパネルの外に出さない */
   restoreMap: Record<string, string>;
+  /** 復元用の対応表（一般化した語 → 原文）。元の語が1つに決まるものだけ。サイドパネルの外に出さない */
+  generalizedMap: Record<string, string>;
 };
