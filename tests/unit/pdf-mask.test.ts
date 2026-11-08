@@ -85,10 +85,40 @@ describe('PDF のまま加工する', () => {
     const doc = await PDFDocument.load(out.bytes, { updateMetadata: false });
     expect(doc.getTitle()).toBeUndefined();
     expect(doc.getAuthor()).toBeUndefined();
-    // 「花」は名前にしか出てこない。元のフォントは外され、ラベル用のフォントにも「花」は入らない
-    expect(out.notes.join('\n')).toContain('フォントの文字を同梱フォントで書き直しました');
+    // 「花」「子」は名前にしか出てこない。本文のフォントは書き直さず、その字形と対応だけを取り除く
+    const notes = out.notes.join(' / ');
+    expect(notes).toContain('字形を');
+    expect(notes).not.toContain('同梱フォントで書き直しました');
     const model = buildTextModel(doc);
     expect(model.glyphs.some((g) => g.unicode === '花')).toBe(false);
+    const { parseCMap } = await import('../../src/infra/pdf/cmap');
+    const { streamBytes } = await import('../../src/infra/pdf/objects');
+    const { PDFStream, PDFName } = await import('pdf-lib');
+    let toUnicodes = 0;
+    for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+      if (!(obj instanceof PDFStream) || obj.dict.get(PDFName.of('Subtype')) || obj.dict.get(PDFName.of('Length1'))) continue;
+      const bytes = streamBytes(obj);
+      const head = new TextDecoder('latin1').decode(bytes);
+      if (!head.includes('beginbfchar') && !head.includes('beginbfrange')) continue;
+      toUnicodes++;
+      const mapped = [...parseCMap(bytes).unicode.values()].join('');
+      expect(mapped).not.toContain('花');
+      // 隠していない文字の対応は残る
+      if (mapped.includes('面')) expect(mapped).toContain('担当');
+    }
+    expect(toUnicodes).toBeGreaterThan(0);
+  });
+
+  it('TrueType から指定した字形の輪郭だけを空にする', async () => {
+    const { blankTrueTypeGlyphs } = await import('../../src/infra/pdf/fontscrub');
+    const original = fontkit.create(JP_FONT);
+    const gidHana = original.glyphForCodePoint('花'.codePointAt(0)!).id;
+    const gidChu = original.glyphForCodePoint('中'.codePointAt(0)!).id;
+    const out = blankTrueTypeGlyphs(new Uint8Array(JP_FONT), new Set([gidHana]));
+    const f = fontkit.create(out);
+    expect((f.getGlyph(gidHana).path as unknown as { commands: unknown[] }).commands.length).toBe(0);
+    expect((f.getGlyph(gidChu).path as unknown as { commands: unknown[] }).commands.length).toBeGreaterThan(0);
+    expect(f.getGlyph(gidChu).advanceWidth).toBe(original.getGlyph(gidChu).advanceWidth);
   });
 });
 
@@ -167,5 +197,34 @@ describe('埋め込みなしの日本語フォント（既定の CMap）', () =>
     const text = textOf(buildTextModel(await loadEditable(out.bytes)));
     expect(text).not.toContain('090-1234-5678');
     expect(text).not.toContain('田中花子');
+  });
+});
+
+describe('書き込み用のフォント', () => {
+  it('埋め込んだラベル用フォントの字形が壊れていない', async () => {
+    const { embedLabelFont } = await import('../../src/infra/pdf/mask');
+    const { streamBytes } = await import('../../src/infra/pdf/objects');
+    const { PDFDict, PDFName } = await import('pdf-lib');
+    const doc = await PDFDocument.create();
+    doc.registerFontkit(fontkit);
+    const text = '[日付1][住所1]組織A人物B[電話番号1]';
+    const font = await embedLabelFont(doc, new Uint8Array(JP_FONT), [text]);
+    doc.addPage().drawText(text, { font, size: 12, x: 10, y: 10 });
+    const saved = await PDFDocument.load(await doc.save());
+    const full = fontkit.create(JP_FONT);
+    let checked = 0;
+    for (const [, obj] of saved.context.enumerateIndirectObjects()) {
+      if (!(obj instanceof PDFDict) || String(obj.get(PDFName.of('Subtype'))) !== '/CIDFontType2') continue;
+      const fd = saved.context.lookup(obj.get(PDFName.of('FontDescriptor'))) as typeof obj;
+      const ff = saved.context.lookup(fd.get(PDFName.of('FontFile2'))) as unknown as { dict: typeof obj } & Parameters<typeof streamBytes>[0];
+      const embedded = fontkit.create(Buffer.from(streamBytes(ff)) as never);
+      for (const ch of new Set(text)) {
+        const gid = full.glyphForCodePoint(ch.codePointAt(0)!).id;
+        const want = (full.getGlyph(gid).path as unknown as { commands: unknown[] }).commands.length;
+        expect((embedded.getGlyph(gid).path as unknown as { commands: unknown[] }).commands.length, ch).toBe(want);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(10);
   });
 });

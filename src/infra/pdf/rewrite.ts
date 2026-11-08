@@ -11,13 +11,23 @@ import type { GlyphRef, TextModel, Unit } from './textmodel';
 export class PdfEditError extends Error {}
 
 /** 1行の中の連続した文字を、text に置き換える。text が空なら取り除くだけ */
-export type Piece = { glyphs: number[]; text: string };
+export type Piece = {
+  glyphs: number[];
+  text: string;
+  /** 書き込みに使える幅（文字空間）。省略時は取り除く文字の幅。復元では、ラベルの後ろの空きも含めた幅を渡す */
+  width?: number;
+  /** 書き込む文字の大きさ。省略時は取り除く文字と同じ */
+  size?: number;
+};
+
+/** 横幅はここまで詰める。これでも収まらないときだけ文字を小さくする（大きさをそろえるため） */
+const MIN_SCALE = 35;
 
 type Edit = {
   /** 取り除く文字（part ごとのバイト範囲） */
   removed: GlyphRef[];
   /** 文字の前に差し込む書き込み */
-  inserts: Map<GlyphRef, { text: string; width: number }>;
+  inserts: Map<GlyphRef, { text: string; width: number; size?: number }>;
 };
 
 /** 置き換えを命令に反映する。書き換えたユニットを返す */
@@ -43,7 +53,7 @@ export function applyPieces(doc: PDFDocument, model: TextModel, pieces: Piece[],
       e.removed.push(g);
     }
     if (piece.text) {
-      byOp.get(first.op)!.inserts.set(first, { text: piece.text, width: spanWidth(gs) });
+      byOp.get(first.op)!.inserts.set(first, { text: piece.text, width: piece.width ?? spanWidth(gs), size: piece.size });
     }
   }
 
@@ -63,7 +73,7 @@ export function applyPieces(doc: PDFDocument, model: TextModel, pieces: Piece[],
 }
 
 /** 文字の並びの、文字空間での幅（最初の文字の向きで測る） */
-function spanWidth(gs: GlyphRef[]): number {
+export function spanWidth(gs: GlyphRef[]): number {
   const f = gs[0]!;
   const l = gs[gs.length - 1]!;
   const len = Math.hypot(f.dx, f.dy);
@@ -113,7 +123,7 @@ function rewriteShowOp(o: Op, e: Edit, font: PDFFont, labelRes: string): Op[] {
       const ins = e.inserts.get(g);
       if (ins) {
         flush();
-        out.push(...writeText(ins.text, ins.width, g, font, labelRes));
+        out.push(...writeText(ins.text, ins.width, g, font, labelRes, ins.size));
       }
       // TJ の数値 n は -n/1000 × 大きさ × Tz だけ進む。取り除いた文字の送り幅と同じだけ進める
       pushNum((-g.adv / (g.state.size * g.state.th)) * 1000);
@@ -126,18 +136,22 @@ function rewriteShowOp(o: Op, e: Edit, font: PDFFont, labelRes: string): Op[] {
 }
 
 /** 文字列を、幅 width（文字空間）に収めて書き、書いた分だけ戻す。前後の文字の状態は元に戻す */
-function writeText(text: string, width: number, g: GlyphRef, font: PDFFont, labelRes: string): Op[] {
+function writeText(text: string, width: number, g: GlyphRef, font: PDFFont, labelRes: string, baseSize?: number): Op[] {
   const st = g.state;
   if (width <= 0) return [];
-  let size = st.size;
+  const base = baseSize ?? st.size;
+  let size = base;
   const natural = font.widthOfTextAtSize(text, size);
   if (natural <= 0) return [];
   let hz = 100;
+  let rise = st.ts + (base < st.size ? (st.size - base) * 0.3 : 0);
   if (natural > width) {
     hz = (width / natural) * 100;
-    if (hz < 50) {
-      size = st.size * (width / (natural * 0.5));
-      hz = 50;
+    if (hz < MIN_SCALE) {
+      size = base * (width / (natural * (MIN_SCALE / 100)));
+      hz = MIN_SCALE;
+      // 小さくした分だけ持ち上げて、行の高さの中ほどに置く
+      rise = st.ts + (base - size) * 0.3;
     }
   }
   const advance = (font.widthOfTextAtSize(text, size) * hz) / 100;
@@ -150,7 +164,9 @@ function writeText(text: string, width: number, g: GlyphRef, font: PDFFont, labe
     { op: 'Tz', args: [num(round(hz))] },
     { op: 'Tc', args: [num(0)] },
     { op: 'Tw', args: [num(0)] },
+    ...(rise !== st.ts ? [{ op: 'Ts', args: [num(round(rise))] }] : []),
     { op: 'Tj', args: [str(bytes)] },
+    ...(rise !== st.ts ? [{ op: 'Ts', args: [num(st.ts)] }] : []),
     { op: 'Tf', args: [name(st.fontName!), num(st.size)] },
     { op: 'Tz', args: [num(round(st.th * 100))] },
     { op: 'Tc', args: [num(st.tc)] },

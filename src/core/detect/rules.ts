@@ -341,7 +341,7 @@ const RULES: Rule[] = [
   {
     id: 'age',
     category: 'age',
-    re: re('(?<!\\d)(\\d{1,3})\\s?(?:歳|才)'),
+    re: re('(?<!\\d)(\\d{1,3})[^\\S\\n]?(?:歳|才)'),
     tier: TIER.certainRule,
     certainty: '確定',
     evidence: pattern('年齢の形式'),
@@ -666,4 +666,4 @@ export function detectRules(text: string): Span[] {
   return spans;
 }
 
-export const RULE_ENGINE_VERSION = 'rule-2';
+export const RULE_ENGINE_VERSION = 'rule-3';

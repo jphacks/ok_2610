@@ -6,6 +6,7 @@ import type { FontInfo } from './fonts';
 import { replaceImage, type ImageEnv, type PaintGroup, type Rgba } from './images';
 import { latin1 } from './lexer';
 import { getDict, N, resolve, streamBytes } from './objects';
+import { compositeComponents, dropTables, keepOnlyGlyphs, LAYOUT_TABLES, scrubFont } from './fontscrub';
 import { applyPieces, PdfEditError, writeUnit, type Piece } from './rewrite';
 import { collectGarbage, sanitizeDocument, stripMarkedContent } from './sanitize';
 import { applyPoint, buildTextModel, invert, pageText, type GlyphRef, type Matrix, type TextModel } from './textmodel';
@@ -83,7 +84,6 @@ export async function exportMaskedPdf(src: PdfSource, segments: OutputSegment[],
 
   const doc = await loadEditable(src.base);
   doc.registerFontkit(fontkit);
-  const font = await doc.embedFont(await env.labelFont(), { subset: true });
   const model = buildTextModel(doc, MAX_PAGES);
   checkSameModel(model, src);
   const notes: string[] = [];
@@ -147,8 +147,17 @@ export async function exportMaskedPdf(src: PdfSource, segments: OutputSegment[],
   }
   if (rectMiss) notes.push(`画像のない場所に描いた四角形が ${rectMiss} 個あり、使いませんでした。文字は「手動でマスク」で隠してください。`);
 
-  // ---- 隠した語にしか出てこない字形を持つフォントは、すべて書き直す ----
-  const leaky = leakyFonts(model, removed);
+  // ---- 隠した語にしか出てこない字形を持つフォント ----
+  // 埋め込み TrueType などは、その字形だけを空にする（ほかの文字は元のフォントのまま）。
+  // それができない形式のフォントだけ、文字をすべて同梱フォントで書き直す
+  const leakyCodes = leakyFonts(model, removed);
+  const leaky = new Set<FontInfo>();
+  let scrubbed = 0;
+  for (const [f, codes] of leakyCodes) {
+    if (scrubFont(doc, f, codes)) scrubbed++;
+    else leaky.add(f);
+  }
+  if (scrubbed) notes.push(`隠した語にしか使われていない字形を、${scrubbed} 個のフォントから取り除きました（ほかの文字の見た目は変わりません）。`);
   if (leaky.size) {
     const byFont = new Map<FontInfo, number[]>();
     model.glyphs.forEach((g, i) => {
@@ -169,6 +178,7 @@ export async function exportMaskedPdf(src: PdfSource, segments: OutputSegment[],
   }
 
   try {
+    const font = await embedLabelFont(doc, await env.labelFont(), pieces.map((x) => x.text));
     applyPieces(doc, model, pieces, font);
   } catch (e) {
     if (e instanceof PdfEditError) throw new PdfExportError(`PDF として保存できませんでした: ${e.message}`);
@@ -242,8 +252,8 @@ function lineBoxes(chars: { x0: number; y0: number; x1: number; y1: number }[]) 
   return boxes;
 }
 
-/** フォントごとに、取り除いた文字コードが、残る文字のどこにも使われていなければ「漏れる」フォント */
-export function leakyFonts(model: TextModel, removed: Set<number>): Set<FontInfo> {
+/** フォントごとに、取り除いた文字コードのうち、残る文字のどこにも使われていないもの（フォントに残ると漏れる字形） */
+export function leakyFonts(model: TextModel, removed: Set<number>): Map<FontInfo, Set<number>> {
   const kept = new Map<FontInfo, Set<number>>();
   const gone = new Map<FontInfo, Set<number>>();
   model.glyphs.forEach((g, i) => {
@@ -254,15 +264,11 @@ export function leakyFonts(model: TextModel, removed: Set<number>): Set<FontInfo
     set.add(g.code);
     m.set(f, set);
   });
-  const out = new Set<FontInfo>();
+  const out = new Map<FontInfo, Set<number>>();
   for (const [f, codes] of gone) {
     const k = kept.get(f) ?? new Set<number>();
-    for (const c of codes) {
-      if (!k.has(c)) {
-        out.add(f);
-        break;
-      }
-    }
+    const only = new Set([...codes].filter((c) => !k.has(c)));
+    if (only.size) out.set(f, only);
   }
   // フォントの中に残るほかの字形（どこにも使われていないもの）も同じ理由で漏れうるが、
   // 隠した語に由来しない限り情報にはならないので対象にしない
@@ -276,7 +282,9 @@ function runs(model: TextModel, indices: number[]): number[][] {
   let prev: GlyphRef | undefined;
   for (const i of indices) {
     const g = model.glyphs[i]!;
-    if (prev && (g.unit !== prev.unit || g.op !== prev.op || i !== (cur[cur.length - 1] ?? -2) + 1)) {
+    // 文字の間が空いている所（表の別のセルなど）でも分ける。つなげて書き直すと、離れていた文字がくっつく
+    const apart = prev ? Math.hypot(g.x - (prev.x + prev.dx), g.y - (prev.y + prev.dy)) > Math.max(prev.h, g.h) * 0.3 : false;
+    if (prev && (apart || g.unit !== prev.unit || g.op !== prev.op || i !== (cur[cur.length - 1] ?? -2) + 1)) {
       out.push(cur);
       cur = [];
     }
@@ -361,3 +369,25 @@ function utf16(s: string): string {
 
 export type { PDFFont, Rgba };
 export { N };
+
+/**
+ * 書き込む文字列に使う字形だけを持つフォントを埋め込む。
+ * pdf-lib の部分埋め込み（subset）は、このフォントでは一部の字形が壊れるため使わない。
+ * 代わりに、使わない字形の輪郭を空にしたフォントを丸ごと埋め込む（字形の番号は変わらないので、文字の割り当てがずれない）。
+ */
+export async function embedLabelFont(doc: PDFDocument, fontBytes: Uint8Array, texts: string[]): Promise<PDFFont> {
+  const plain = dropTables(fontBytes, LAYOUT_TABLES);
+  const f = fontkit.create(plain as never) as unknown as { glyphForCodePoint(cp: number): { id: number } };
+  const keep = new Set<number>([0]);
+  const chars = new Map<number, number>();
+  for (const t of [...texts, ' ']) {
+    for (const ch of t) {
+      const cp = ch.codePointAt(0)!;
+      const id = f.glyphForCodePoint(cp).id;
+      keep.add(id);
+      if (id) chars.set(cp, id);
+    }
+  }
+  for (const g of [...keep]) for (const c of compositeComponents(plain, g)) keep.add(c);
+  return doc.embedFont(keepOnlyGlyphs(plain, keep, chars), { subset: false });
+}
