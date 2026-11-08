@@ -18,7 +18,15 @@ export type Piece = {
   width?: number;
   /** 書き込む文字の大きさ。省略時は取り除く文字と同じ */
   size?: number;
+  /** text の代わりに、元の PDF の字形を元のフォント・位置のまま書く（復元） */
+  run?: RunGlyph[];
 };
+
+/**
+ * 元の PDF の1文字。位置は、書き込みを始める点（取り除く最初の文字の原点）からの文字空間での距離。
+ * along は行の向き、rise は行に垂直な向き（Ts の値そのもの）。advance は Tc・Tw を除いた送り幅。
+ */
+export type RunGlyph = { font: PDFRef; size: number; th: number; tr: number; bytes: Uint8Array; along: number; rise: number; advance: number };
 
 /** 横幅はここまで詰める。これでも収まらないときだけ文字を小さくする（大きさをそろえるため） */
 const MIN_SCALE = 35;
@@ -27,7 +35,7 @@ type Edit = {
   /** 取り除く文字（part ごとのバイト範囲） */
   removed: GlyphRef[];
   /** 文字の前に差し込む書き込み */
-  inserts: Map<GlyphRef, { text: string; width: number; size?: number }>;
+  inserts: Map<GlyphRef, { text: string; width: number; size?: number; run?: RunGlyph[] }>;
 };
 
 /** 置き換えを命令に反映する。書き換えたユニットを返す */
@@ -52,19 +60,24 @@ export function applyPieces(doc: PDFDocument, model: TextModel, pieces: Piece[],
       byOp.set(g.op, e);
       e.removed.push(g);
     }
-    if (piece.text) {
-      byOp.get(first.op)!.inserts.set(first, { text: piece.text, width: piece.width ?? spanWidth(gs), size: piece.size });
+    if (piece.text || piece.run?.length) {
+      byOp.get(first.op)!.inserts.set(first, { text: piece.text, width: piece.width ?? spanWidth(gs), size: piece.size, run: piece.run });
     }
   }
 
   const ctx = doc.context;
   for (const [unit, byOp] of edits) {
-    const labelRes = ensureFontResource(ctx, unit, font);
+    const names = new Map<PDFRef, string>();
+    const res = (ref: PDFRef, prefix: string) => {
+      let key = names.get(ref);
+      if (!key) names.set(ref, (key = ensureFontResource(ctx, unit, ref, prefix)));
+      return key;
+    };
     const out: Op[] = [];
     unit.ops.forEach((o, i) => {
       const e = byOp.get(i);
       if (!e) out.push(o);
-      else out.push(...rewriteShowOp(o, e, font, labelRes));
+      else out.push(...rewriteShowOp(o, e, font, res));
     });
     unit.ops = out;
     writeUnit(doc, unit);
@@ -86,7 +99,7 @@ export function spanWidth(gs: GlyphRef[]): number {
 }
 
 /** Tj・'・" を TJ に直したうえで、取り除く文字を送り幅の数値に置き換え、書き込みを差し込む */
-function rewriteShowOp(o: Op, e: Edit, font: PDFFont, labelRes: string): Op[] {
+function rewriteShowOp(o: Op, e: Edit, font: PDFFont, res: (ref: PDFRef, prefix: string) => string): Op[] {
   const pre: Op[] = [];
   let items: Token[];
   if (o.op === 'TJ' && o.args[0]?.t === 'arr') items = o.args[0].items;
@@ -123,7 +136,8 @@ function rewriteShowOp(o: Op, e: Edit, font: PDFFont, labelRes: string): Op[] {
       const ins = e.inserts.get(g);
       if (ins) {
         flush();
-        out.push(...writeText(ins.text, ins.width, g, font, labelRes, ins.size));
+        if (ins.run?.length) out.push(...writeRun(ins.run, g, (ref) => res(ref, 'TCOrig')));
+        else out.push(...writeText(ins.text, ins.width, g, font, res(font.ref, 'TCLabel'), ins.size));
       }
       // TJ の数値 n は -n/1000 × 大きさ × Tz だけ進む。取り除いた文字の送り幅と同じだけ進める
       pushNum((-g.adv / (g.state.size * g.state.th)) * 1000);
@@ -176,10 +190,65 @@ function writeText(text: string, width: number, g: GlyphRef, font: PDFFont, labe
   ];
 }
 
+/**
+ * 元の字形を、元のフォント・大きさ・位置のまま書き、書いた分だけ戻す。前後の文字の状態は元に戻す。
+ * 位置は1文字ずつ TJ の数値（行の向き）と Ts（行に垂直な向き）で合わせるので、行をまたぐ語も元の場所に戻る。
+ */
+function writeRun(run: RunGlyph[], g: GlyphRef, res: (ref: PDFRef) => string): Op[] {
+  const st = g.state;
+  const out: Op[] = [
+    { op: 'Tc', args: [num(0)] },
+    { op: 'Tw', args: [num(0)] },
+  ];
+  let font: PDFRef | null = null;
+  let size = 0;
+  let th = 0;
+  let tr = st.tr;
+  let rise = st.ts;
+  let cur = 0;
+  for (const r of run) {
+    if (r.font !== font || r.size !== size) {
+      out.push({ op: 'Tf', args: [name(res(r.font)), num(r.size)] });
+      font = r.font;
+      size = r.size;
+    }
+    if (r.th !== th) {
+      out.push({ op: 'Tz', args: [num(round(r.th * 100))] });
+      th = r.th;
+    }
+    if (r.tr !== tr) {
+      out.push({ op: 'Tr', args: [num(r.tr)] });
+      tr = r.tr;
+    }
+    const nextRise = round(r.rise);
+    if (nextRise !== rise) {
+      out.push({ op: 'Ts', args: [num(nextRise)] });
+      rise = nextRise;
+    }
+    const items: Token[] = [];
+    const n = round((-(r.along - cur) / (size * th)) * 1000);
+    if (n !== 0) items.push(num(n));
+    items.push(str(r.bytes));
+    out.push({ op: 'TJ', args: [{ t: 'arr', items }] });
+    // 実際に進んだ量（数値は丸めてある）
+    cur += (-n / 1000) * size * th + r.advance;
+  }
+  if (rise !== st.ts) out.push({ op: 'Ts', args: [num(st.ts)] });
+  if (tr !== st.tr) out.push({ op: 'Tr', args: [num(st.tr)] });
+  out.push(
+    { op: 'Tf', args: [name(st.fontName!), num(st.size)] },
+    { op: 'Tz', args: [num(round(st.th * 100))] },
+    { op: 'Tc', args: [num(st.tc)] },
+    { op: 'Tw', args: [num(st.tw)] },
+    { op: 'TJ', args: [{ t: 'arr', items: [num((cur / (st.size * st.th)) * 1000)] }] },
+  );
+  return out;
+}
+
 const round = (v: number) => Number(formatNumber(v));
 
 /** ユニットの資源に、書き込み用のフォントを登録する。名前は既存と重ならないものにする */
-function ensureFontResource(ctx: PDFContext, unit: Unit, font: PDFFont): string {
+function ensureFontResource(ctx: PDFContext, unit: Unit, ref: PDFRef, prefix: string): string {
   let res = unit.resources;
   if (!res) {
     res = ctx.obj({});
@@ -195,11 +264,11 @@ function ensureFontResource(ctx: PDFContext, unit: Unit, font: PDFFont): string 
     fonts = ctx.obj({});
     res.set(N('Font'), fonts);
   }
-  for (const [k, v] of fonts.entries()) if (v instanceof PDFRef && v === font.ref) return k.decodeText();
+  for (const [k, v] of fonts.entries()) if (v instanceof PDFRef && v === ref) return k.decodeText();
   let n = 0;
-  let key = 'TCLabel';
-  while (fonts.get(N(key))) key = `TCLabel${++n}`;
-  fonts.set(N(key), font.ref);
+  let key = prefix;
+  while (fonts.get(N(key))) key = `${prefix}${++n}`;
+  fonts.set(N(key), ref);
   return key;
 }
 
