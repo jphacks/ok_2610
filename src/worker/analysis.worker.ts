@@ -1,5 +1,6 @@
 import { analyze, type EngineOutput } from '../core/analyze';
-import { resolvePolicy, type ResolvedPolicy } from '../core/policy';
+import { reportingTarget, resolvePolicy, type ResolvedPolicy } from '../core/policy';
+import { REPORT_ORIGIN } from '../infra/report-origin';
 import { restoreLabels } from '../core/restore';
 import { detectNer, nerAvailability } from '../engines/ner';
 import type { PolicySummary, WorkerRequest, WorkerResponse } from './protocol';
@@ -31,6 +32,7 @@ function summarize(policy: ResolvedPolicy): PolicySummary {
     ...(policy.allowedOrigins ? { allowedOrigins: policy.allowedOrigins } : {}),
     minStage: policy.minStage,
     requireConditions: policy.requireConditions,
+    reporting: reportingTarget(policy, REPORT_ORIGIN) !== null,
   };
 }
 

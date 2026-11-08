@@ -12,3 +12,7 @@ public/ort/
 
 .DS_Store
 *.log
+
+# 利用記録サーバーの DB と管理画面のビルド
+server/data/
+admin/dist/

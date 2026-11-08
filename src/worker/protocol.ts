@@ -30,7 +30,7 @@ export type WorkerResponseMap = {
 
 export type PolicySummary =
   | { status: 'none' }
-  | { status: 'active'; version: string; name?: string; contact?: string; minStage: string; requireConditions: boolean; allowedOrigins?: string[] }
+  | { status: 'active'; version: string; name?: string; contact?: string; minStage: string; requireConditions: boolean; allowedOrigins?: string[]; /** 利用記録を組織へ送るか */ reporting: boolean }
   | { status: 'error'; reason: string };
 
 export type WorkerResponse =

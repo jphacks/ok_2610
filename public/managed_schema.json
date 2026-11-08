@@ -16,6 +16,16 @@
     },
     "prohibitedPatterns": { "type": "array", "items": { "type": "string" }, "description": "禁止パターン（正規表現）" },
     "requireConditions": { "type": "boolean", "description": "利用条件の確認を出力の必須条件にする" },
-    "contact": { "type": "string", "description": "相談先（画面に表示）" }
+    "contact": { "type": "string", "description": "相談先（画面に表示）" },
+    "reporting": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "description": "文章を含まない利用記録を組織のサーバーへ送る" },
+        "endpoint": { "type": "string", "description": "記録サーバーの URL（拡張のビルド時に許可したオリジンと一致させる）" },
+        "orgToken": { "type": "string", "description": "記録を書き込むだけの組織トークン（tc_ で始まる）" },
+        "department": { "type": "string", "description": "部署（英数字と . _ - のみ、32文字まで）" }
+      },
+      "description": "利用記録の送信（SERVER_DESIGN.md §3-1）"
+    }
   }
 }

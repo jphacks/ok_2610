@@ -7,6 +7,7 @@ import { exportSpreadsheet } from '../../infra/spreadsheet-export';
 import { log } from '../../infra/logger';
 import { getActiveTab, insertToTab, requestSitePermission } from '../../infra/tabs';
 import { canConfirm, canOutput, destinationKey, useStore } from '../store';
+import { reportOutput } from '../usage';
 import { Icon } from './Icon';
 import { PdfPreview } from './PdfPreview';
 
@@ -56,6 +57,7 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
       const ok = await copyText(result.masked);
       setMessage(ok ? 'コピーしました' : 'コピーできませんでした。');
       log('output', { copy: ok });
+      if (ok) reportOutput();
       return;
     }
     if (destination.kind === 'file') {
@@ -89,6 +91,7 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
         saveFile(out.bytes, out.fileName, out.mimeType);
         setMessage([`加工文を「${out.fileName}」として保存しました。保存先の扱いにご注意ください。`, ...out.notes].join('\n'));
         log('output', { file: true });
+        reportOutput();
       } catch {
         setMessage('ファイルを書き出せませんでした。コピーをお使いください。');
         log('output', { file: false });
@@ -108,6 +111,7 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
     const outcome = await insertToTab(destination.tabId, site, result.masked);
     setMessage(outcome.ok ? MESSAGES.inserted : outcome.reason);
     log('output', { insert: outcome.ok });
+    if (outcome.ok) reportOutput();
   }
 
   const site = destination.kind === 'insert' ? siteForUrl(destination.origin) : undefined;

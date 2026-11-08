@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SAFE_TOKEN } from '../../shared/usage-event';
 import { ALL_CATEGORIES } from './model/categories';
 import type { Category, EngineId, Stage } from './model/types';
 
@@ -21,6 +22,16 @@ export const PolicySchema = z.object({
   prohibitedPatterns: z.array(z.string()).optional(),
   requireConditions: z.boolean().optional(),
   contact: z.string().optional(),
+  /** 文章を含まない利用記録を組織のサーバーへ送る（SERVER_DESIGN.md §3-1） */
+  reporting: z
+    .strictObject({
+      enabled: z.boolean(),
+      endpoint: z.url({ protocol: /^https?$/ }),
+      /** 記録を書き込むだけの組織トークン。社員の端末に配られるので秘密としては扱わない */
+      orgToken: z.string().regex(/^tc_[A-Za-z0-9_-]{16,128}$/),
+      department: z.string().regex(SAFE_TOKEN).optional(),
+    })
+    .optional(),
 });
 
 export type Policy = z.infer<typeof PolicySchema>;
@@ -40,8 +51,20 @@ export type ResolvedPolicy =
       patterns: RegExp[];
       requireConditions: boolean;
       contact?: string;
+      reporting?: Reporting;
     }
   | { status: 'error'; reason: string };
+
+export type Reporting = NonNullable<Policy['reporting']>;
+
+/**
+ * 利用記録を送ってよい送信先。組織ポリシーで有効にされ、送信先がビルド時に許可したオリジン（CSP の connect-src）と
+ * 一致するときだけ返す。個人利用（ポリシーなし）では送らない。
+ */
+export function reportingTarget(policy: ResolvedPolicy, buildOrigin: string | undefined): Reporting | null {
+  if (policy.status !== 'active' || !policy.reporting?.enabled || !buildOrigin) return null;
+  return new URL(policy.reporting.endpoint).origin === buildOrigin ? policy.reporting : null;
+}
 
 /** 認証情報は組織ポリシーの有無に関わらず解除できない */
 export const ALWAYS_LOCKED: Category[] = ['credential'];
@@ -79,6 +102,7 @@ export function resolvePolicy(raw: unknown, nowIso: string): ResolvedPolicy {
     patterns,
     requireConditions: p.requireConditions ?? false,
     ...(p.contact ? { contact: p.contact } : {}),
+    ...(p.reporting ? { reporting: p.reporting } : {}),
   };
 }
 

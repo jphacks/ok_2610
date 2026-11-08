@@ -20,7 +20,7 @@ export type Confirmed = { contentId: string; destinationKey: string; masked: str
 /** 読み込んだファイル。Excel・CSV と PDF（Issue #9） */
 export type FileSource = SpreadsheetSource | PdfSource;
 
-type State = {
+export type State = {
   revision: number;
   resultRevision: number | null;
   sessionId: number;
