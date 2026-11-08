@@ -5,6 +5,7 @@ import { saveFile } from '../../infra/download';
 import { workerClient } from '../../infra/analysis-session';
 import { ACCEPTED_EXTENSIONS, readSpreadsheetFile, SpreadsheetError } from '../../infra/spreadsheet';
 import { restoreSpreadsheet, type SpreadsheetRestore } from '../../infra/spreadsheet-restore';
+import { PDF_EXTENSION } from '../../infra/pdf';
 import { log } from '../../infra/logger';
 import { useStore } from '../store';
 import { Icon } from './Icon';
@@ -37,6 +38,7 @@ export function RestorePanel() {
   }
 
   // AIが作った Excel・CSV のセルを戻す。加工して渡したファイルと同じ形でなくてよい
+  // PDF は、ラベルを同じ場所で元の語に書き換える。自分が加工した PDF の画像は元の画素に戻す（Issue #9）
   async function restoreFile(file: File | undefined) {
     if (!file) return;
     const before = useStore.getState();
@@ -44,13 +46,48 @@ export function RestorePanel() {
     setFileMessage(null);
     try {
       if (!before.result || before.analyzing || before.error || before.resultRevision !== before.revision) return;
+      if (file.name.toLowerCase().endsWith(PDF_EXTENSION)) {
+        setFileMessage('PDF を元に戻しています…');
+        const { openPdfEnv } = await import('../../infra/pdf/browser');
+        const { restorePdf } = await import('../../infra/pdf/restore');
+        const env = await openPdfEnv();
+        try {
+          const src = before.source?.kind === 'pdf' ? before.source : null;
+          const value = await restorePdf(
+            {
+              fileName: file.name,
+              bytes: new Uint8Array(await file.arrayBuffer()),
+              restoreMap: before.result.restoreMap,
+              generalizedMap: before.result.generalizedMap,
+              ...(src ? { original: { base: src.base, maskedImages: useStore.getState().pdfMaskedImages } } : {}),
+            },
+            env,
+          );
+          if (useStore.getState().revision !== before.revision) return;
+          setFileMessage(null);
+          setRestoredFile({
+            bytes: value.bytes,
+            fileName: value.fileName,
+            mimeType: 'application/pdf',
+            cellCount: value.replaced + value.images,
+            replacedCount: value.replaced,
+            generalized: [],
+            unmatched: value.unmatched,
+            notes: [...(value.images ? [`画像 ${value.images} 枚を元に戻しました。`] : []), ...value.notes],
+          });
+          log('restore', { pdf: true, replaced: value.replaced });
+        } finally {
+          await env.dispose();
+        }
+        return;
+      }
       const { source } = await readSpreadsheetFile(file);
       const value = restoreSpreadsheet(source, before.result.restoreMap, before.result.generalizedMap);
       if (useStore.getState().revision !== before.revision) return;
       setRestoredFile(value);
       log('restore', { file: true, cells: value.cellCount });
     } catch (e) {
-      if (useStore.getState().revision === before.revision) setFileMessage(e instanceof SpreadsheetError ? e.message : 'ファイルを復元できませんでした。');
+      if (useStore.getState().revision === before.revision) setFileMessage(e instanceof SpreadsheetError || (e instanceof Error && e.name === 'PdfRestoreError') ? (e as Error).message : 'ファイルを復元できませんでした。');
     } finally {
       if (fileInput.current) fileInput.current.value = '';
     }
@@ -95,24 +132,28 @@ export function RestorePanel() {
           </>
         )}
         <div className="restore-file">
-          <p className="hint">AIが作った・手を加えた Excel・CSV も、セルの中のラベルを元の語に戻して保存できます。</p>
+          <p className="hint">AIが作った・手を加えた Excel・CSV・PDF も、中のラベルを元の語に戻して保存できます。PDF はレイアウトを保ったまま戻します。</p>
           <button type="button" disabled={!current} onClick={() => fileInput.current?.click()}>
             <Icon name="file" />
-            Excel・CSV を読込んで戻す
+            ファイルを読込んで戻す
           </button>
           <input
             ref={fileInput}
             type="file"
-            accept={ACCEPTED_EXTENSIONS.join(',')}
+            accept={[...ACCEPTED_EXTENSIONS, PDF_EXTENSION].join(',')}
             hidden
-            aria-label="復元する Excel・CSV ファイル"
+            aria-label="復元する Excel・CSV・PDF ファイル"
             onChange={(e) => void restoreFile(e.target.files?.[0])}
           />
           {fileMessage && !restoredFile && <p className="hint warn">{fileMessage}</p>}
           {restoredFile && (
             <>
               <p className="hint" role="status">
-                {restoredFile.cellCount > 0 ? `${restoredFile.cellCount}セル・${restoredFile.replacedCount}箇所を戻しました。` : '戻せるラベルが見つかりませんでした。'}
+                {restoredFile.cellCount === 0
+                  ? '戻せるラベルが見つかりませんでした。'
+                  : restoredFile.mimeType === 'application/pdf'
+                    ? `${restoredFile.replacedCount}箇所を戻しました。`
+                    : `${restoredFile.cellCount}セル・${restoredFile.replacedCount}箇所を戻しました。`}
               </p>
               {restoredFile.generalized.length > 0 && (
                 <p className="hint">

@@ -8,7 +8,7 @@ import { latin1 } from './lexer';
 import { getDict, N, resolve, streamBytes } from './objects';
 import { applyPieces, PdfEditError, writeUnit, type Piece } from './rewrite';
 import { collectGarbage, sanitizeDocument, stripMarkedContent } from './sanitize';
-import { buildTextModel, pageText, type GlyphRef, type TextModel } from './textmodel';
+import { applyPoint, buildTextModel, invert, pageText, type GlyphRef, type Matrix, type TextModel } from './textmodel';
 
 // 加工後の文章（segments）を、PDF の形のまま反映する（Issue #9）。
 // 1. 置き換えた語の文字を描画命令から取り除き、同じ場所にラベルを書く（位置は変えない）
@@ -27,7 +27,14 @@ export type MaskedPdf = {
   maskedImages: { digest: string; objectNumber: number; generation: number }[];
 };
 
-export class PdfExportError extends Error {}
+export class PdfExportError extends Error {
+  override name = 'PdfExportError';
+}
+
+/** 利用者がページ上に描いた、手動で隠す四角形（PDF の座標、左下が原点） */
+export type PdfRect = { page: number; x0: number; y0: number; x1: number; y1: number };
+
+export const MANUAL_LABEL = '[手動マスク]';
 
 export function maskedPdfName(fileName: string): string {
   const dot = fileName.lastIndexOf('.');
@@ -69,7 +76,7 @@ export function splitLines(model: TextModel, indices: number[]): number[][] {
   return out;
 }
 
-export async function exportMaskedPdf(src: PdfSource, segments: OutputSegment[], env: PdfEnv): Promise<MaskedPdf> {
+export async function exportMaskedPdf(src: PdfSource, segments: OutputSegment[], env: PdfEnv, rects: PdfRect[] = []): Promise<MaskedPdf> {
   const text = segments.map((s) => (s.kind === 'changed' ? s.original : s.text)).join('');
   if (text !== src.text) throw new PdfExportError('読み込んだ PDF と本文が一致しないため、PDF としては保存できません。');
   if (src.blockers.length) throw new PdfExportError(src.blockers.join('\n'));
@@ -119,6 +126,26 @@ export async function exportMaskedPdf(src: PdfSource, segments: OutputSegment[],
       }
     }
   }
+
+  // ---- 手動の四角形: 重なる画像の、その範囲の画素を塗る ----
+  let rectMiss = 0;
+  for (const r of rects) {
+    let hit = false;
+    for (const pl of model.images) {
+      if (pl.page !== r.page) continue;
+      const index = src.images.findIndex((e) => e.objectNumber === pl.ref.objectNumber && e.generation === pl.ref.generationNumber);
+      const entry = src.images[index];
+      if (!entry) continue;
+      const box = rectToPixels(r, pl.ctm, entry.width, entry.height);
+      if (!box) continue;
+      const groups = imageGroups.get(index) ?? [];
+      groups.push({ boxes: [box], label: MANUAL_LABEL });
+      imageGroups.set(index, groups);
+      hit = true;
+    }
+    if (!hit) rectMiss++;
+  }
+  if (rectMiss) notes.push(`画像のない場所に描いた四角形が ${rectMiss} 個あり、使いませんでした。文字は「手動でマスク」で隠してください。`);
 
   // ---- 隠した語にしか出てこない字形を持つフォントは、すべて書き直す ----
   const leaky = leakyFonts(model, removed);
@@ -177,6 +204,20 @@ export async function exportMaskedPdf(src: PdfSource, segments: OutputSegment[],
   const maskedText = segments.map((x) => x.text).join('');
   await verifyNoResidue(bytes, spans, maskedText);
   return { bytes, fileName: maskedPdfName(src.fileName), notes, maskedImages };
+}
+
+/** ページ上の四角形を、画像の画素の範囲に直す。画像は単位正方形を ctm でページに置いたもの */
+export function rectToPixels(r: PdfRect, ctm: Matrix, width: number, height: number) {
+  const inv = invert(ctm);
+  if (!inv) return null;
+  const pts = [applyPoint(inv, r.x0, r.y0), applyPoint(inv, r.x1, r.y0), applyPoint(inv, r.x0, r.y1), applyPoint(inv, r.x1, r.y1)];
+  const us = pts.map((p) => p[0]);
+  const vs = pts.map((p) => p[1]);
+  const u0 = Math.max(0, Math.min(...us)), u1 = Math.min(1, Math.max(...us));
+  const v0 = Math.max(0, Math.min(...vs)), v1 = Math.min(1, Math.max(...vs));
+  if (u1 <= u0 || v1 <= v0) return null;
+  // 画像の 1 行目が上（v=1）
+  return { x0: u0 * width, x1: u1 * width, y0: (1 - v1) * height, y1: (1 - v0) * height };
 }
 
 /** 読み込み時と同じ文字の並びになっているか（同じ base から作るので一致するはず） */

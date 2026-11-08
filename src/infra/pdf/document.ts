@@ -35,7 +35,9 @@ export type PdfSource = {
   notes: string[];
 };
 
-export class PdfImportError extends Error {}
+export class PdfImportError extends Error {
+  override name = 'PdfImportError';
+}
 
 const imgRef = (e: PdfImageEntry) => PDFRef.of(e.objectNumber, e.generation);
 export { imgRef };

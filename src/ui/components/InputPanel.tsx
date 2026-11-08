@@ -1,8 +1,8 @@
 import { useRef, useState, type DragEvent } from 'react';
-import { PDF_EXTENSION, PdfError, readPdfFile } from '../../infra/pdf';
-import { ACCEPTED_EXTENSIONS, readSpreadsheetFile, SpreadsheetError, type SpreadsheetSource } from '../../infra/spreadsheet';
+import { MAX_PDF_BYTES, PDF_EXTENSION, PdfError, readPdfFile } from '../../infra/pdf';
+import { ACCEPTED_EXTENSIONS, readSpreadsheetFile, SpreadsheetError } from '../../infra/spreadsheet';
 import { getActiveTab, importSelection } from '../../infra/tabs';
-import { useStore } from '../store';
+import { useStore, type FileSource } from '../store';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Icon } from './Icon';
 
@@ -18,6 +18,7 @@ export function InputPanel() {
   const [fileNotes, setFileNotes] = useState<string[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reading, setReading] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   async function onImport() {
@@ -58,17 +59,47 @@ export function InputPanel() {
     }
   }
 
+  // PDF は形を保ったまま加工できるよう、文字の出どころを記録して取り込む。画像の中の文字は OCR で読む（Issue #9）
   async function onPdf(file: File) {
+    const sessionId = useStore.getState().sessionId;
     setReading(true);
+    setProgress('PDF を読み込み中…');
+    try {
+      if (file.size > MAX_PDF_BYTES) throw new PdfError(`ファイルが大きすぎます（上限 ${MAX_PDF_BYTES / 1024 / 1024}MB）。`);
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const { openPdfEnv } = await import('../../infra/pdf/browser');
+      const { importPdf } = await import('../../infra/pdf/document');
+      const env = await openPdfEnv();
+      try {
+        const src = await importPdf(file.name, bytes, env.images, (done, total) => setProgress(`画像の文字を読み取り中（${done}/${total}）…`));
+        if (useStore.getState().sessionId !== sessionId) return;
+        importFile(src);
+        setFileNotes([
+          `「${file.name}」（${src.pageCount} ページ）の文字${src.images.some((i) => i.ocr) ? 'と画像の中の文字' : ''}を取り込みました。`,
+          ...(src.blockers.length ? ['PDF の形では保存できません（理由は出力先の欄に表示します）。コピー・挿入はできます。'] : []),
+          ...src.notes,
+        ]);
+      } finally {
+        await env.dispose();
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name === 'PdfImportError') await onPdfTextOnly(file, e.message);
+      else setMessage(e instanceof PdfError ? e.message : 'PDF を読めませんでした。');
+    } finally {
+      setReading(false);
+      setProgress(null);
+      if (fileInput.current) fileInput.current.value = '';
+    }
+  }
+
+  /** PDF の形では扱えないとき（暗号化など）は、文字だけを取り出す */
+  async function onPdfTextOnly(file: File, reason: string) {
     try {
       const { text: imported, notes, pageCount } = await readPdfFile(file);
       setText(imported);
-      setFileNotes([`「${file.name}」（${pageCount} ページ）の文字を取り込みました。`, ...notes]);
+      setFileNotes([`「${file.name}」（${pageCount} ページ）の文字を取り込みました。`, `${reason}加工結果は文章として出力します。`, ...notes]);
     } catch (e) {
       setMessage(e instanceof PdfError ? e.message : 'PDF を読めませんでした。');
-    } finally {
-      setReading(false);
-      if (fileInput.current) fileInput.current.value = '';
     }
   }
 
@@ -102,7 +133,11 @@ export function InputPanel() {
           <Icon name="file" />
           <div>
             <p className="file-name">{fileSource.fileName}</p>
-            <p className="hint">セルの内容を検査しています。結果は下の表で確認できます。</p>
+            <p className="hint">
+              {fileSource.kind === 'pdf'
+                ? 'ページの文字と画像の中の文字を検査しています。PDF の形のまま保存できます。'
+                : 'セルの内容を検査しています。結果は下の表で確認できます。'}
+            </p>
           </div>
         </div>
       ) : (
@@ -124,7 +159,7 @@ export function InputPanel() {
         </button>
         <button type="button" onClick={() => fileInput.current?.click()} disabled={reading}>
           <Icon name="file" />
-          {reading ? 'PDF を読込中…' : fileSource ? '別のファイルを読込' : 'ファイルを読込'}
+          {reading ? '読込中…' : fileSource ? '別のファイルを読込' : 'ファイルを読込'}
         </button>
         <input
           ref={fileInput}
@@ -146,6 +181,7 @@ export function InputPanel() {
         onConfirm={onReset}
         onClose={() => setConfirmOpen(false)}
       />
+      {progress && <p className="hint" role="status">{progress}</p>}
       {message && <p className="hint warn">{message}</p>}
       {fileNotes.length > 0 && (
         <ul className="hint file-notes" aria-label="ファイルの取込結果">
@@ -158,8 +194,9 @@ export function InputPanel() {
   );
 }
 
-function fileSummary(source: SpreadsheetSource): string {
+function fileSummary(source: FileSource): string {
   if (source.kind === 'csv') return 'CSV';
+  if (source.kind === 'pdf') return `PDF・${source.pageCount} ページ`;
   const cells = source.sheets.reduce((n, s) => n + s.cells.length, 0);
   return `${source.sheets.length} シート・${cells.toLocaleString()} セル`;
 }

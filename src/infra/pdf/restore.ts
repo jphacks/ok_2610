@@ -24,7 +24,9 @@ export type PdfRestoreInput = {
 
 export type PdfRestoreResult = { bytes: Uint8Array; fileName: string; replaced: number; images: number; unmatched: string[]; notes: string[] };
 
-export class PdfRestoreError extends Error {}
+export class PdfRestoreError extends Error {
+  override name = 'PdfRestoreError';
+}
 
 export function restoredPdfName(fileName: string): string {
   const dot = fileName.lastIndexOf('.');

@@ -8,6 +8,9 @@ import { log } from '../../infra/logger';
 import { getActiveTab, insertToTab, requestSitePermission } from '../../infra/tabs';
 import { canConfirm, canOutput, destinationKey, useStore } from '../store';
 import { Icon } from './Icon';
+import { PdfPreview } from './PdfPreview';
+
+const NEWLINE = String.fromCharCode(10);
 
 /** 出力（FR-22, FR-23）。押した時点の版と送信先を確認済みにし、その版だけをコピー・挿入・保存する */
 export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { onConditions: () => void; showingOriginal: boolean; onShowMasked: () => void }) {
@@ -21,7 +24,9 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
     destination.kind === 'insert' && policy.status === 'active' && policy.allowedOrigins !== undefined && !policy.allowedOrigins.includes(destination.origin);
   const blocked = !canConfirm(state);
   const fileSource = source && result.text === source.text ? source : null;
-  const fileLabel = fileSource ? `元と同じ形式（.${fileSource.fileName.split('.').pop()?.toLowerCase()}）で保存` : '';
+  const isPdf = fileSource?.kind === 'pdf';
+  const pdfBlockers = fileSource?.kind === 'pdf' ? fileSource.blockers : [];
+  const fileLabel = !fileSource ? '' : isPdf ? 'PDF のまま保存（レイアウトを保つ）' : `元と同じ形式（.${fileSource.fileName.split('.').pop()?.toLowerCase()}）で保存`;
 
   async function chooseInsert() {
     const sessionId = useStore.getState().sessionId;
@@ -56,6 +61,29 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
     if (destination.kind === 'file') {
       const src = current.source;
       if (!src || src.text !== result.text) return setMessage('読み込んだファイルの本文が変わったため、同じ形式では保存できません。');
+      if (src.kind === 'pdf') {
+        setMessage('PDF を書き出しています…');
+        try {
+          const { openPdfEnv } = await import('../../infra/pdf/browser');
+          const { exportMaskedPdf } = await import('../../infra/pdf/mask');
+          const env = await openPdfEnv({ ocr: false });
+          try {
+            const out = await exportMaskedPdf(src, result.segments, env, current.pdfRects);
+            const latest = useStore.getState();
+            if (!canOutput(latest) || latest.revision !== current.revision) return setMessage('書き出しの間に内容が変わりました。もう一度確認してください。');
+            saveFile(out.bytes, out.fileName, 'application/pdf');
+            latest.setPdfMaskedImages(out.maskedImages);
+            setMessage([`加工した PDF を「${out.fileName}」として保存しました。保存先の扱いにご注意ください。`, ...out.notes].join(NEWLINE));
+            log('output', { pdf: true });
+          } finally {
+            await env.dispose();
+          }
+        } catch (e) {
+          setMessage(e instanceof Error && e.message ? e.message : 'PDF を書き出せませんでした。コピーをお使いください。');
+          log('output', { pdf: false });
+        }
+        return;
+      }
       try {
         const out = exportSpreadsheet(src, result.segments);
         saveFile(out.bytes, out.fileName, out.mimeType);
@@ -101,11 +129,23 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
           </label>
           {fileSource && (
             <label className="check-line">
-              <input type="radio" name="dest" checked={destination.kind === 'file'} onChange={() => state.setDestination({ kind: 'file' })} />
+              <input type="radio" name="dest" checked={destination.kind === 'file'} disabled={pdfBlockers.length > 0} onChange={() => state.setDestination({ kind: 'file' })} />
               {fileLabel}
             </label>
           )}
-          {destination.kind === 'file' && fileSource && (
+          {pdfBlockers.length > 0 && (
+            <ul className="hint warn file-notes" aria-label="PDF のまま保存できない理由">
+              {pdfBlockers.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          )}
+          {destination.kind === 'file' && isPdf && (
+            <p className="hint">
+              隠す語は、同じ場所で「人物A」などのラベルに置き換え、ほかの文字の位置は変えません。画像の中の語は塗りつぶしてラベルを書きます。作成者などのファイル情報・しおり・注釈・フォームは取り除きます。保存したラベル入りの PDF は「AIの回答を復元」で元に戻せます。
+            </p>
+          )}
+          {destination.kind === 'file' && fileSource && !isPdf && (
             <p className="hint">
               加工した値のセルだけを書き換え、書式・列幅・シート構成は元のまま残します。画像・コメント・グラフ・作成者などの情報は検査していないため取り除きます。
             </p>
@@ -139,6 +179,7 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
         </div>
       )}
 
+      {fileSource?.kind === 'pdf' && pdfBlockers.length === 0 && <PdfPreview source={fileSource} />}
       {showingOriginal && <p className="hint warn">原文を表示中です。<button type="button" className="link" onClick={onShowMasked}>加工後に戻って確認</button></p>}
       <div className="output-actions">
         <button type="button" className="primary" aria-label={destination.kind === 'copy' ? MESSAGES.outputCopy : destination.kind === 'file' ? MESSAGES.outputFile : MESSAGES.outputInsert} disabled={blocked || showingOriginal} onClick={() => void onOutput()}>

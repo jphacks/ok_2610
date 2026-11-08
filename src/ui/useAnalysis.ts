@@ -19,6 +19,8 @@ export function useAnalysis() {
   const ops = useStore((s) => s.ops);
   const answers = useStore((s) => s.answers);
   const revision = useStore((s) => s.revision);
+  // PDF をそのままの形で加工するときは、元に戻せるよう隠す語をすべてラベルにする（Issue #9）
+  const labelsOnly = useStore((s) => s.source?.kind === 'pdf' && s.source.text === s.text);
   const loaded = useRef(false);
 
   // 起動時: 設定・エンジンの状態・右クリックの受け渡しを読む
@@ -66,7 +68,7 @@ export function useAnalysis() {
       store.setError(null);
       const t0 = performance.now();
       try {
-        const settings = settingsFrom(prefs, parseCustomTerms(prefs.customText));
+        const settings = settingsFrom(prefs, parseCustomTerms(prefs.customText), { labelsOnly });
         const nano = prefs.useNano && text.trim() ? await sessionNano(text) : undefined;
         if (!active()) return;
         const policyRaw = await readManagedPolicy();
@@ -90,5 +92,5 @@ export function useAnalysis() {
       }
     }, DEBOUNCE_MS);
     return () => { disposed = true; clearTimeout(timer); };
-  }, [text, prefs, ops, answers, revision]);
+  }, [text, prefs, ops, answers, revision, labelsOnly]);
 }

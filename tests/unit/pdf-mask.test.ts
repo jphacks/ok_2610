@@ -119,3 +119,53 @@ describe('PDF のまま元に戻す', () => {
     expect(Math.abs(nameBefore.x - nameAfter.x)).toBeLessThan(0.01);
   });
 });
+
+describe('PDF のときはラベルだけで隠す', () => {
+  it('一般化・削除の代わりにラベルにし、すべて対応表で元に戻せる', async () => {
+    const { settings } = await import('./helpers');
+    const text = '営業部の担当は田中花子さん（35歳）です。住所は東京都港区芝公園4-2-8です。';
+    const normal = await run(text);
+    const labels = await run(text, { settings: settings({ labelsOnly: true }) });
+    const changedNormal = normal.segments.filter((s) => s.kind === 'changed');
+    const changed = labels.segments.filter((s) => s.kind === 'changed');
+    expect(changed.length).toBe(changedNormal.length);
+    expect(changedNormal.some((s) => !(s.text in normal.restoreMap))).toBe(true);
+    for (const s of changed) expect(labels.restoreMap[s.text], s.text).toBe(s.kind === 'changed' ? s.original : '');
+  });
+});
+
+describe('AIが作った PDF を元に戻す', () => {
+  it('別のレイアウトの PDF でも、ラベルをその場所で元の語に書き換える', async () => {
+    const { restorePdf } = await import('../../src/infra/pdf/restore');
+    const doc = await PDFDocument.create();
+    doc.registerFontkit(fontkit);
+    const jp = await doc.embedFont(JP_FONT, { subset: true });
+    const page = doc.addPage([400, 300]);
+    page.drawText('要約: 人物Aは[電話番号1]で連絡可能。', { x: 30, y: 250, size: 11, font: jp });
+    page.drawText('人物ABという別の語は戻さない。', { x: 30, y: 220, size: 11, font: jp });
+    const bytes = await doc.save();
+    const back = await restorePdf(
+      { fileName: '回答.pdf', bytes, restoreMap: { 人物A: '田中花子', '[電話番号1]': '090-1234-5678' }, generalizedMap: {} },
+      { labelFont: async () => new Uint8Array(JP_FONT), images: null },
+    );
+    expect(back.fileName).toBe('回答_復元済み.pdf');
+    expect(back.replaced).toBe(2);
+    const text = textOf(buildTextModel(await loadEditable(back.bytes)));
+    expect(text).toContain('要約: 田中花子は090-1234-5678で連絡可能。');
+    expect(text).toContain('人物ABという別の語は戻さない。');
+  });
+});
+
+describe('埋め込みなしの日本語フォント（既定の CMap）', () => {
+  it('UniJIS-UCS2-H の文字も読め、ラベルに置き換えられる', async () => {
+    const { buildPdf } = await import('./pdf-fixture');
+    const src = await importPdf('古い.pdf', buildPdf([['Tel: 090-1234-5678', '担当は田中花子さんです'], []]), null);
+    expect(src.text).toBe('【ページ 1】\nTel: 090-1234-5678\n担当は田中花子さんです\n\n【ページ 2】\n');
+    expect(src.blockers).toEqual([]);
+    const result = await run(src.text);
+    const out = await exportMaskedPdf(src, result.segments, env);
+    const text = textOf(buildTextModel(await loadEditable(out.bytes)));
+    expect(text).not.toContain('090-1234-5678');
+    expect(text).not.toContain('田中花子');
+  });
+});

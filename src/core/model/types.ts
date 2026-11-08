@@ -205,6 +205,8 @@ export type Settings = {
   customTerms: CustomTerm[];
   /** 同じセッションの過去の加工文を評価範囲に含めるか（FR-09） */
   includeHistory: boolean;
+  /** 隠す語をすべてラベルにする（PDF をそのままの形で加工するとき。Issue #9） */
+  labelsOnly?: boolean;
 };
 
 export type ManualOp =
