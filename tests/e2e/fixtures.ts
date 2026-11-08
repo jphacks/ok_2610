@@ -7,8 +7,9 @@ const extensionPath = path.resolve(import.meta.dirname, '../../.output/chrome-mv
 export const test = base.extend<{ context: BrowserContext; extensionId: string; external: string[] }>({
   // eslint-disable-next-line no-empty-pattern
   context: async ({}, use) => {
+    // PW_CHANNEL=msedge などで、Playwright の Chromium の代わりに端末に入っているブラウザで動かせる
     const context = await chromium.launchPersistentContext('', {
-      channel: 'chromium',
+      channel: process.env.PW_CHANNEL || 'chromium',
       args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
     });
     await use(context);
