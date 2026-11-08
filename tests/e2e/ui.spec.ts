@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from './fixtures';
 
-const demo = readFileSync(new URL('../fixtures/demo-email.txt', import.meta.url), 'utf8');
+// Windows で core.autocrlf が有効だと CRLF になる。入力欄は LF に直すので、比べられるよう LF にそろえる
+const demo = readFileSync(new URL('../fixtures/demo-email.txt', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
 
 test('メイン画面だけで確認・コピーでき、設定は別画面で変更できる', async ({ context, extensionId }, testInfo) => {
   const page = await context.newPage();
@@ -153,7 +154,7 @@ test('PDF を読み込むと、ページの文字（日本語を含む）が検�
   expect(text).not.toContain('田中花子');
 
   // ラベル入りの PDF を読み込み、元の語に戻して保存する
-  await page.getByText('AIの回答を復元').click();
+  await page.getByRole('heading', { name: 'AIの回答を復元' }).click();
   await page.getByLabel('復元する Excel・CSV・PDF ファイル').setInputFiles({ name: '面談記録_加工済み.pdf', mimeType: 'application/pdf', buffer: masked });
   const [restored] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '「面談記録_復元済み.pdf」を保存' }).click()]);
   const back = buildTextModel(await loadEditable(new Uint8Array(readFileSync((await restored.path())!))));
@@ -173,7 +174,9 @@ test('Excel ファイルを読み込むと、セルの文字が検査される',
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await page.getByLabel('読み込む Excel・CSV・PDF ファイル').setInputFiles({ name: '顧客.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(xlsx) });
-  await expect(page.getByLabel('解析する文章')).toHaveValue('【シート: 顧客】\n連絡先\tsato.hanako@example.co.jp');
+  // 取り込んだファイルは入力欄ではなく、ファイル名とシート・セルの数で示す
+  await expect(page.getByLabel('読み込んだファイル')).toContainText('顧客.xlsx');
+  await expect(page.getByText('1 シート・2 セル')).toBeVisible();
   await expect(page.getByRole('list', { name: 'ファイルの取込結果' })).toContainText('画像は取り込んでいません');
   await expect(page.getByLabel('加工後の文章')).not.toContainText('sato.hanako@example.co.jp', { timeout: 90_000 });
   await expect(page.getByLabel('加工後の文章')).toContainText('連絡先');
@@ -198,7 +201,7 @@ test('Excel ファイルを読み込むと、セルの文字が検査される',
   expect(files['xl/media/image1.png']).toBeUndefined();
 
   // AIから戻ってきた Excel（ここでは加工後のファイル）を読み込み、元の語に戻して保存する
-  await page.getByText('AIの回答を復元').click();
+  await page.getByRole('heading', { name: 'AIの回答を復元' }).click();
   await page.getByLabel('復元する Excel・CSV・PDF ファイル').setInputFiles({ name: '顧客_加工済み.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(readFileSync((await download.path())!)) });
   await expect(page.getByText(/1セル・1箇所を戻しました/)).toBeVisible();
   const [restored] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '「顧客_復元済み.xlsx」を保存' }).click()]);
