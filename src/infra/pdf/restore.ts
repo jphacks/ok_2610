@@ -3,11 +3,11 @@ import { PDFRef, PDFStream } from 'pdf-lib';
 import { restoreLabels as restoreText } from '../../core/restore';
 import { loadEditable, PdfImportError } from './document';
 import { imageInfo, ocrText, replaceImage, worthOcr, type PaintGroup } from './images';
-import { digestBytes, splitLines, type PdfEnv } from './mask';
+import { digestBytes, embedLabelFont, splitLines, type PdfEnv } from './mask';
 import { streamBytes } from './objects';
-import { applyPieces, PdfEditError, type Piece } from './rewrite';
+import { applyPieces, PdfEditError, spanWidth, type Piece } from './rewrite';
 import { flattenAnnotations } from './sanitize';
-import { buildTextModel, pageText } from './textmodel';
+import { buildTextModel, pageText, type TextModel } from './textmodel';
 
 // AIなどから戻ってきた PDF の中のラベルを、元の語に戻す（Issue #9）。
 // 文字のラベルは、その位置・幅のまま元の語に書き換える。自分がマスクした画像は元の画素に戻し、
@@ -61,7 +61,6 @@ export async function restorePdf(input: PdfRestoreInput, env: PdfEnv): Promise<P
   }
   flattenAnnotations(doc);
   doc.registerFontkit(fontkit);
-  const font = await doc.embedFont(await env.labelFont(), { subset: true });
   const model = buildTextModel(doc);
   const map = { ...input.generalizedMap, ...input.restoreMap };
   const notes: string[] = [];
@@ -82,11 +81,17 @@ export async function restorePdf(input: PdfRestoreInput, env: PdfEnv): Promise<P
         if (v >= 0 && glyphs[glyphs.length - 1] !== v) glyphs.push(v);
       }
       if (!glyphs.length) continue;
-      splitLines(model, glyphs).forEach((line, k) => pieces.push({ glyphs: line, text: k === 0 ? hit.original : '' }));
+      splitLines(model, glyphs).forEach((line, k) => {
+        if (k > 0) return pieces.push({ glyphs: line, text: '' });
+        // 自分が加工した PDF では、ラベルの後ろに元の語の幅だけ空きが残っている。そこまで使って元の大きさで書く
+        const after = trailing(model, line[line.length - 1]!);
+        pieces.push({ glyphs: line, text: hit.original, width: spanWidth(line.map((i) => model.glyphs[i]!)) + after.gap, size: after.size });
+      });
       replaced++;
     }
   }
   try {
+    const font = await embedLabelFont(doc, await env.labelFont(), pieces.map((x) => x.text));
     applyPieces(doc, model, pieces, font);
   } catch (e) {
     if (e instanceof PdfEditError) throw new PdfRestoreError(`元の語に戻せませんでした: ${e.message}`);
@@ -159,4 +164,42 @@ export async function restorePdf(input: PdfRestoreInput, env: PdfEnv): Promise<P
 
   const bytes = await doc.save({ useObjectStreams: false });
   return { bytes, fileName: restoredPdfName(input.fileName), replaced, images, unmatched: [...unmatched], notes };
+}
+
+/**
+ * 文字の後ろに続く、何も描かない送り（TJ の数値）の合計（文字空間）と、その間に戻された文字の大きさ。
+ * このツールで加工した PDF では、ラベルを書いた後に「元の語の幅」だけ送っているので、それが元の語の場所になる。
+ * ほかの PDF ではすぐ次の文字が来るので 0 になる。
+ */
+export function trailing(model: TextModel, glyphIndex: number): { gap: number; size?: number } {
+  const g = model.glyphs[glyphIndex]!;
+  const unit = model.units[g.unit]!;
+  let size = g.state.size;
+  let th = g.state.th;
+  let gap = 0;
+  let restoredSize: number | undefined;
+  const label = g.state.fontName?.startsWith('TCLabel') ?? false;
+  const walk = (items: { t: string; v?: number; bytes?: Uint8Array }[]): boolean => {
+    for (const it of items) {
+      if (it.t === 'num') gap += (-(it.v ?? 0) / 1000) * size * th;
+      else if (it.t === 'str' && it.bytes && it.bytes.length) return false;
+    }
+    return true;
+  };
+  const first = unit.ops[g.op];
+  if (first?.op === 'TJ' && first.args[0]?.t === 'arr' && !walk(first.args[0].items.slice(g.part + 1) as never)) return { gap: Math.max(0, gap) };
+  for (let i = g.op + 1; i < unit.ops.length; i++) {
+    const o = unit.ops[i]!;
+    const n = (k: number) => (o.args[k]?.t === 'num' ? (o.args[k] as { v: number }).v : 0);
+    if (o.op === 'Tf') {
+      size = n(1);
+      if (label && restoredSize === undefined) restoredSize = size;
+    } else if (o.op === 'Tz') th = n(0) / 100;
+    else if (['Tc', 'Tw', 'Ts', 'Tr', 'TL', 'BMC', 'BDC', 'EMC', 'rg', 'RG', 'g', 'G', 'k', 'K', 'sc', 'scn', 'SC', 'SCN', 'cs', 'CS'].includes(o.op)) continue;
+    else if (o.op === 'TJ' && o.args[0]?.t === 'arr') {
+      if (!walk(o.args[0].items as never)) break;
+    } else if (o.op === 'Tj' && o.args[0]?.t === 'str' && !o.args[0].bytes.length) continue;
+    else break;
+  }
+  return { gap: Math.max(0, gap), size: label && restoredSize && restoredSize > g.state.size ? restoredSize : undefined };
 }
