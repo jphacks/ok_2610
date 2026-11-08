@@ -394,6 +394,7 @@ interface SiteAdapter {
 - 合成規則: **制約の強い側を採る**。ポリシーの出所・版・適用状態を常に表示する。
 - 読込み失敗・スキーマ不一致・期限切れ → 停止（§10）。
 - 本文を集中管理側へ収集する機能は持たない。
+- 組織が有効にした場合だけ、**文章を含まない利用記録**（種類ごとの件数・出力先・1時間単位の時刻など）を組織の記録サーバーへ送る。管理画面でポリシーを編集し、MDM 用の JSON を書き出す。詳細は [SERVER_DESIGN.md](SERVER_DESIGN.md)。
 - 発表では動かさず、スライドで説明する。そのため実装は最後に回す（§19）。
 
 ---
@@ -426,12 +427,13 @@ interface SiteAdapter {
 | Gemini Nano モデルの取得 | Chrome（初回のみ。拡張は関与しない） | 含まない。**取得が起きることを利用前に表示**（NFR-07） |
 | モデル・辞書の更新（採用時） | 拡張。固定の取得先から、SHA-256 を照合 | 含まない。D-05 で採否を決める |
 | 加工文の出力 | 利用者の明示操作 | 確認済みの加工文のみ |
+| 利用記録の送信 | 拡張（`infra/reporting.ts`）。組織ポリシーで有効なときだけ | 含まない。種類ごとの件数などだけ（SERVER_DESIGN.md §1） |
 
 **送信ゼロの担保（3層）**
 
-1. **CSP**: 拡張ページは `connect-src 'self'`。外部への fetch はブラウザが拒否する。
+1. **CSP**: 拡張ページは `connect-src 'self'`。外部への fetch はブラウザが拒否する。記録サーバーのオリジンは、ビルド時に `WXT_REPORT_ORIGIN` を指定したときだけ1つ足す。
 2. **権限**: `host_permissions` を持たない。サイト連携は対象ドメインごとの任意権限（§14）。
-3. **コード**: ESLint で `fetch` / `XMLHttpRequest` / `WebSocket` / `sendBeacon` / `EventSource` を禁止し、同梱物を読む `infra/assets.ts` だけを例外にする。E2E 試験で外部へのリクエストが 0 件であることを確認する（AT-07）。
+3. **コード**: ESLint で `fetch` / `XMLHttpRequest` / `WebSocket` / `sendBeacon` / `EventSource` を禁止し、同梱物を読む `infra/assets.ts` と、利用記録を送る `infra/reporting.ts` だけを例外にする。E2E 試験で外部へのリクエストが 0 件であることを確認する（AT-07）。
 
 ### 13-4. ログ
 

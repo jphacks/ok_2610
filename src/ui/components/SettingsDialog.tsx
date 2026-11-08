@@ -2,6 +2,7 @@ import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { MESSAGES } from '../../core/explain/messages';
 import { ConditionsPanel } from './ConditionsPanel';
 import { SettingsPanel } from './SettingsPanel';
+import { UsageNotice } from './UsageNotice';
 import { Icon } from './Icon';
 
 export type SettingsSection = 'preferences' | 'conditions';
@@ -53,6 +54,7 @@ export function SettingsDialog({ open, section, onSection, onClose }: {
           <summary>データの扱いと注意点</summary>
           <ul>{[MESSAGES.sessionScope, MESSAGES.clipboardNote, MESSAGES.noGuarantee, MESSAGES.externalNotChecked].map((m) => <li key={m}>{m}</li>)}</ul>
         </details>
+        <UsageNotice open={open} />
       </div>
       <div className="settings-bottom"><span className="hint">変更は自動で反映されます</span><button type="button" className="primary" onClick={onClose}>文章に戻る</button></div>
     </dialog>

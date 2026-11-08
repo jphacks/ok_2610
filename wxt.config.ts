@@ -25,6 +25,16 @@ const BUNDLED: { from: string; to: string }[] = [
 // 対応AIサイト。継続的な連携を利用者が有効にしたときだけ、ドメイン単位で権限を求める（SEC-01）
 const AI_SITES = ['https://gemini.google.com/*', 'https://chatgpt.com/*', 'https://claude.ai/*'];
 
+// 利用記録を送るサーバーのオリジン（SERVER_DESIGN.md §3-2）。指定したビルドだけ CSP の connect-src に1つ足す。
+// 未指定なら従来どおり外部への通信は一切できない。
+const REPORT_ORIGIN = (() => {
+  const raw = process.env.WXT_REPORT_ORIGIN;
+  if (!raw) return '';
+  const url = new URL(raw);
+  if (url.origin !== raw) throw new Error(`WXT_REPORT_ORIGIN はオリジンだけを指定してください（例 http://localhost:8787）: ${raw}`);
+  return url.origin;
+})();
+
 // onnxruntime-web は WASM を assets/ にも複製するが、engines/ner.ts の wasmPaths で public/ort/ の方を読むので使われない（約26MB）
 const dropBundledOrtWasm = (): Plugin => ({
   name: 'drop-bundled-ort-wasm',
@@ -61,11 +71,11 @@ export default defineConfig({
     action: { default_title: 'テキストクリーナーを開く' },
     storage: { managed_schema: 'managed_schema.json' },
     content_security_policy: {
-      // 外部への通信は connect-src 'self' で封じる（LP-01）。開発時だけ HMR 用に localhost を許す
+      // 外部への通信は connect-src 'self' で封じる（LP-01）。開発時だけ HMR 用に localhost を許す。利用記録の送信先は REPORT_ORIGIN だけ
       extension_pages:
         mode === 'development'
-          ? "script-src 'self' 'wasm-unsafe-eval' http://localhost:3000; object-src 'self'; connect-src 'self' ws://localhost:3000 http://localhost:3000"
-          : "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self'",
+          ? `script-src 'self' 'wasm-unsafe-eval' http://localhost:3000; object-src 'self'; connect-src 'self' ws://localhost:3000 http://localhost:3000${REPORT_ORIGIN ? ` ${REPORT_ORIGIN}` : ''}`
+          : `script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self'${REPORT_ORIGIN ? ` ${REPORT_ORIGIN}` : ''}`,
     },
   }),
 });

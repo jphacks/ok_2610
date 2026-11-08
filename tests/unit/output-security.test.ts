@@ -63,7 +63,7 @@ test('ポリシーで許可されない挿入先は確認も出力もできな�
   useStore.getState().setDestination({ kind: 'insert', tabId: 1, origin: 'https://chatgpt.com', siteId: 'chatgpt', siteName: 'ChatGPT' });
   await approve();
   const s = useStore.getState();
-  s.setResult({ ...s.result!, policy: { status: 'active', version: 'same', minStage: 'A', requireConditions: false, allowedOrigins: [] } }, s.revision);
+  s.setResult({ ...s.result!, policy: { status: 'active', version: 'same', minStage: 'A', requireConditions: false, allowedOrigins: [], reporting: false } }, s.revision);
   expect(canConfirm(useStore.getState())).toBe(false);
   expect(canOutput(useStore.getState())).toBe(false);
 });

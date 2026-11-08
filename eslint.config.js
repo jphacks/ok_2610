@@ -3,14 +3,14 @@ import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
-// 外部へ送信できる API。同梱物を読む src/infra/assets.ts と NER の読込み以外では使わない（LP-01）
+// 外部へ送信できる API。同梱物を読む src/infra/assets.ts・NER の読込み・利用記録の送信（src/infra/reporting.ts）以外では使わない（LP-01）
 const NETWORK_GLOBALS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts'].map((name) => ({
   name,
   message: '外部通信の経路を増やさないため使用禁止です（ARCHITECTURE.md §13-3）。',
 }));
 
 export default tseslint.config(
-  { ignores: ['.output/', '.wxt/', 'node_modules/', 'public/', '.venv-ner/', 'test-results/'] },
+  { ignores: ['.output/', '.wxt/', 'node_modules/', 'public/', '.venv-ner/', 'test-results/', 'admin/dist/', 'server/data/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -41,11 +41,18 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/engines/ner.ts', 'src/infra/assets.ts'],
+    files: ['src/engines/ner.ts', 'src/infra/assets.ts', 'src/infra/reporting.ts'],
     rules: { 'no-restricted-globals': 'off' },
   },
   {
-    files: ['tests/**/*.ts', 'scripts/**/*.mjs', '*.config.{ts,js}'],
+    files: ['tests/**/*.ts', 'scripts/**/*.mjs', '*.config.{ts,js}', 'server/**/*.ts', 'admin/vite.config.ts'],
     languageOptions: { globals: { ...globals.node } },
+  },
+  {
+    // 管理画面。通信は自分のサーバー（同じオリジン）の API だけ
+    files: ['admin/src/**/*.{ts,tsx}'],
+    languageOptions: { globals: { ...globals.browser } },
+    plugins: { 'react-hooks': reactHooks },
+    rules: { ...reactHooks.configs.recommended.rules },
   },
 );

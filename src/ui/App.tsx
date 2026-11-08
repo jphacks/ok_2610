@@ -8,9 +8,11 @@ import { SettingsDialog, type SettingsSection } from './components/SettingsDialo
 import { Icon } from './components/Icon';
 import { useStore } from './store';
 import { useAnalysis } from './useAnalysis';
+import { useUsageReporting } from './usage';
 
 export function App() {
   useAnalysis();
+  useUsageReporting();
   const { notice, error, text, result, sessionId, conditions } = useStore();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('preferences');
