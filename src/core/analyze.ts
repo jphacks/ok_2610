@@ -252,7 +252,7 @@ export async function analyze(input: AnalyzeInput): Promise<AnalysisResult> {
 
   const current = decideAll(bases, stage, input, entityOf);
   opIssues.push(...current.issues);
-  const rendered = render(text, current.candidates, entities, allocate);
+  const rendered = render(text, current.candidates, entities, allocate, { labelsOnly: settings.labelsOnly });
   for (const c of current.candidates) c.output = rendered.outputs.get(c.id) ?? c.text;
 
   const risks = evaluateCombination({ candidates: current.candidates, analysisFailed });

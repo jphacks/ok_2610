@@ -33,7 +33,12 @@ function partialMask(text: string, visible: number): string {
  * 候補の処理から加工後の文章を組み立てる。
  * 同じ分類・同じ原文には同じラベルを返す（採番は出現順なので決定的）。
  */
-export function render(text: string, candidates: Candidate[], entities: Entity[], allocate: ReturnType<typeof makeLabelAllocator>): RenderResult {
+export type RenderOptions = {
+  /** 隠す語をすべてラベルにする（PDF のまま加工するとき。元に戻せるよう、削除・一般化・部分マスクは使わない） */
+  labelsOnly?: boolean;
+};
+
+export function render(text: string, candidates: Candidate[], entities: Entity[], allocate: ReturnType<typeof makeLabelAllocator>, options: RenderOptions = {}): RenderResult {
   const entityById = new Map(entities.map((e) => [e.id, e]));
   const categoryLabels = new Map<string, string>();
   const pseudonyms = new Map<string, string>();
@@ -51,7 +56,11 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
     const category = primaryCategory(c.categories);
     const info = CATEGORY_INFO[category];
     let out: string;
-    switch (c.action.kind) {
+    let kind = c.action.kind;
+    if (options.labelsOnly && (kind === 'delete' || kind === 'partialMask' || kind === 'generalize' || kind === 'replace')) {
+      kind = c.entityId || info.pseudonymPrefix ? 'pseudonym' : 'categoryLabel';
+    }
+    switch (kind) {
       case 'keep':
         out = c.text;
         break;
@@ -59,10 +68,10 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
         out = '';
         break;
       case 'replace':
-        out = c.action.text;
+        out = c.action.kind === 'replace' ? c.action.text : c.text;
         break;
       case 'partialMask':
-        out = partialMask(c.text, c.action.visible);
+        out = c.action.kind === 'partialMask' ? partialMask(c.text, c.action.visible) : c.text;
         break;
       case 'pseudonym': {
         const entity = c.entityId ? entityById.get(c.entityId) : undefined;
@@ -81,7 +90,7 @@ export function render(text: string, candidates: Candidate[], entities: Entity[]
         break;
       }
       case 'generalize': {
-        const g = generalize(c.text, category, c.action.level, c.sensitiveKind);
+        const g = c.action.kind === 'generalize' ? generalize(c.text, category, c.action.level, c.sensitiveKind) : null;
         if (g !== null) {
           out = g;
           if (g !== c.text) {

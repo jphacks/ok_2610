@@ -3,6 +3,8 @@ import type { Answer, ConditionsResult } from '../core/conditions';
 import type { AnalysisResult, ManualOp, Settings } from '../core/model/types';
 import type { PolicySummary } from '../worker/protocol';
 import type { SpreadsheetSource } from '../infra/spreadsheet';
+import type { PdfSource } from '../infra/pdf/document';
+import type { MaskedPdf, PdfRect } from '../infra/pdf/mask';
 import type { NanoAvailability } from '../engines/nano';
 import { clearPendingText, DEFAULT_PREFS, type Prefs } from '../infra/storage';
 import { clearAnalysisSession } from '../infra/analysis-session';
@@ -15,14 +17,21 @@ export const destinationKey = (d: Destination) => (d.kind === 'insert' ? `insert
 
 export type Confirmed = { contentId: string; destinationKey: string; masked: string };
 
+/** 読み込んだファイル。Excel・CSV と PDF（Issue #9） */
+export type FileSource = SpreadsheetSource | PdfSource;
+
 type State = {
   revision: number;
   resultRevision: number | null;
   sessionId: number;
   confirmationInvalidated: boolean;
   text: string;
-  /** 読み込んだ Excel・CSV。本文を書き換えたら消す（同じ形式での保存は、読み込んだままの本文にだけ使える） */
-  source: SpreadsheetSource | null;
+  /** 読み込んだ Excel・CSV・PDF。本文を書き換えたら消す（同じ形式での保存は、読み込んだままの本文にだけ使える） */
+  source: FileSource | null;
+  /** PDF の上に手で描いた、隠す四角形 */
+  pdfRects: PdfRect[];
+  /** 加工して保存した PDF で差し替えた画像（復元で元の画素に戻すため）。メモリにだけ置く */
+  pdfMaskedImages: MaskedPdf['maskedImages'];
   prefs: Prefs;
   ops: ManualOp[];
   /** 元に戻す単位。まとめて適用した操作は1つのまとまりとして戻す（FR-19） */
@@ -44,7 +53,9 @@ type State = {
 
 type Actions = {
   setText: (text: string) => void;
-  importFile: (source: SpreadsheetSource) => void;
+  importFile: (source: FileSource) => void;
+  setPdfRects: (rects: PdfRect[]) => void;
+  setPdfMaskedImages: (m: MaskedPdf['maskedImages']) => void;
   setPrefs: (patch: Partial<Prefs>) => void;
   addOp: (op: ManualOp) => void;
   addOps: (ops: ManualOp[]) => void;
@@ -74,6 +85,8 @@ const initial: State = {
   confirmationInvalidated: false,
   text: '',
   source: null,
+  pdfRects: [],
+  pdfMaskedImages: [],
   prefs: DEFAULT_PREFS,
   ops: [],
   groups: [],
@@ -112,9 +125,14 @@ export const useStore = create<State & Actions>((set) => ({
       redo: [],
       selectedId: null,
       source: null,
+      pdfRects: [],
+      pdfMaskedImages: [],
       ...(s.destination.kind === 'file' ? { destination: { kind: 'copy' } as const } : {}),
     })),
-  importFile: (source) => set((s) => ({ ...invalidate(s), text: source.text, source, ops: [], groups: [], redo: [], selectedId: null })),
+  importFile: (source) => set((s) => ({ ...invalidate(s), text: source.text, source, pdfRects: [], pdfMaskedImages: [], ops: [], groups: [], redo: [], selectedId: null })),
+  // 四角形が変われば、出力の中身が変わるので確認をやり直す
+  setPdfRects: (pdfRects) => set((s) => ({ ...invalidate(s), pdfRects })),
+  setPdfMaskedImages: (pdfMaskedImages) => set({ pdfMaskedImages }),
   setPrefs: (patch) => set((s) => ({ ...invalidate(s), prefs: { ...s.prefs, ...patch } })),
   addOp: (op) => set((s) => ({ ...invalidate(s), ops: [...s.ops, op], groups: [...s.groups, 1], redo: [] })),
   addOps: (ops) => set((s) => (ops.length ? { ...invalidate(s), ops: [...s.ops, ...ops], groups: [...s.groups, ops.length], redo: [] } : s)),
@@ -153,8 +171,9 @@ export const useStore = create<State & Actions>((set) => ({
   },
 }));
 
-export function settingsFrom(prefs: Prefs, customTerms: Settings['customTerms']): Settings {
+export function settingsFrom(prefs: Prefs, customTerms: Settings['customTerms'], extra: { labelsOnly?: boolean } = {}): Settings {
   return {
+    ...(extra.labelsOnly ? { labelsOnly: true } : {}),
     stage: prefs.stage,
     purpose: prefs.purpose,
     keep: prefs.keep,

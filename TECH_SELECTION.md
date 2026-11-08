@@ -42,7 +42,12 @@
 | 実行環境 | Node.js 24 LTS（22 でも可） | — | 開発用。拡張の実行には関係しない | — |
 | パッケージ管理 | npm | Node 同梱 | 追加のインストールが要らない | — |
 | ZIP の展開・作成（Excel 読込み・保存） | fflate | 0.8.3 | 依存なし・小さい・同期 API で Worker なしでも扱える。xlsx の XML は自前の最小限の読み取りで足りるため、SheetJS などの大きな表計算ライブラリは入れない | Issue #10 |
-| PDF の文字の取り出し | pdfjs-dist（PDF.js） | 6.4.299 | ブラウザ向けの事実上の標準で、テキストレイヤーと日本語の CMap に対応する。描画は使わず getTextContent だけを使う。PDF を選んだときだけ読み込み（遅延 import）、専用 Worker で動かす。CMap は拡張に同梱する | Issue #9 |
+| PDF の描画・文字の取り出し | pdfjs-dist（PDF.js） | 6.4.299 | ブラウザ向けの事実上の標準。暗号化などで構造を読めない PDF の文字の取り出し、PDF の中の画像の画素への変換、仕上がりの確認画面の描画に使う。PDF を選んだときだけ読み込み（遅延 import）、専用 Worker で動かす。CMap と wasm は拡張に同梱する | Issue #9 |
+| PDF の読み書き | pdf-lib | 1.17.1 | MIT。オブジェクトを直接読み書きでき、フォントの部分埋め込みができる。描画命令の解析と書き換えは自前（`infra/pdf/`）。編集・墨消しに強い MuPDF は AGPL のため使わない | Issue #9 |
+| フォントの埋め込み | @pdf-lib/fontkit・@pdf-lib/standard-fonts | 1.1.1・1.0.0 | pdf-lib で TrueType を部分埋め込みする。標準 14 フォントの文字幅に standard-fonts を使う | Issue #9 |
+| ラベル・元の語のフォント | BIZ UDPゴシック（@expo-google-fonts/biz-udpgothic） | 0.4.2 | SIL Open Font License。静的な TrueType で JIS 第1〜第4水準を含み、プロポーショナル。拡張に同梱する | Issue #9 |
+| 画像の文字の読み取り（OCR） | tesseract.js・tesseract.js-core・@tesseract.js-data/jpn | 7.0.0・7.0.0・1.0.0（4.0.0_best_int） | Apache-2.0。端末内で動き、文字1つずつの位置（symbols）まで取れるので、塗りつぶす箱を正確に決められる。Worker・本体・日本語データは拡張に同梱し、CDN からは取らない（workerBlobURL も使わない） | Issue #9・#11 |
+| テスト用のキャンバス | @napi-rs/canvas（開発用） | 1.1.0 | Node 上で PDF.js の描画と画像の塗りつぶしを、ブラウザと同じ処理で試す | Issue #9 |
 
 ---
 

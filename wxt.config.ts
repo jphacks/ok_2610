@@ -4,8 +4,23 @@ import { dirname, join } from 'node:path';
 import { defineConfig } from 'wxt';
 import type { Plugin } from 'vite';
 
-// PDF.js が日本語フォントの文字を読むのに使う CMap を pdf-cmaps/ に同梱する（Issue #9）。外部の CDN からは取らない
-const PDF_CMAPS_DIR = join(dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')), 'cmaps');
+const require = createRequire(import.meta.url);
+const pkgDir = (name: string) => dirname(require.resolve(`${name}/package.json`));
+
+// PDF の加工・復元（Issue #9）と画像の文字の読み取りに使う部品を、拡張に同梱する。外部の CDN からは取らない
+// - pdf-cmaps/: PDF.js が日本語フォントの文字を読むのに使う CMap
+// - pdf-wasm/: PDF.js が JPEG2000・JBIG2 の画像と色の変換に使う wasm
+// - ocr/: Tesseract.js の Worker・本体（wasm 入り）・日本語の学習データ
+// - fonts/label.ttf: ラベルと元の語を PDF に書き込むフォント（BIZ UDPゴシック、SIL Open Font License）
+const PDF_CMAPS_DIR = join(pkgDir('pdfjs-dist'), 'cmaps');
+const BUNDLED: { from: string; to: string }[] = [
+  ...['openjpeg.wasm', 'qcms_bg.wasm', 'jbig2.wasm'].map((f) => ({ from: join(pkgDir('pdfjs-dist'), 'wasm', f), to: `pdf-wasm/${f}` })),
+  { from: join(pkgDir('tesseract.js'), 'dist', 'worker.min.js'), to: 'ocr/worker.min.js' },
+  ...['tesseract-core-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.js', 'tesseract-core-relaxedsimd-lstm.wasm.js'].map((f) => ({ from: join(pkgDir('tesseract.js-core'), f), to: `ocr/${f}` })),
+  { from: join(pkgDir('@tesseract.js-data/jpn'), '4.0.0_best_int', 'jpn.traineddata.gz'), to: 'ocr/jpn.traineddata.gz' },
+  { from: join(pkgDir('@expo-google-fonts/biz-udpgothic'), '400Regular', 'BIZUDPGothic_400Regular.ttf'), to: 'fonts/label.ttf' },
+  { from: join(pkgDir('@expo-google-fonts/biz-udpgothic'), 'LICENSE_FONT'), to: 'fonts/LICENSE_FONT.txt' },
+];
 
 // 対応AIサイト。継続的な連携を利用者が有効にしたときだけ、ドメイン単位で権限を求める（SEC-01）
 const AI_SITES = ['https://gemini.google.com/*', 'https://chatgpt.com/*', 'https://claude.ai/*'];
@@ -30,6 +45,7 @@ export default defineConfig({
       for (const name of readdirSync(PDF_CMAPS_DIR)) {
         if (name.endsWith('.bcmap')) files.push({ absoluteSrc: join(PDF_CMAPS_DIR, name), relativeDest: `pdf-cmaps/${name}` });
       }
+      for (const f of BUNDLED) files.push({ absoluteSrc: f.from, relativeDest: f.to });
     },
   },
   vite: () => ({
