@@ -126,6 +126,19 @@ test('加工漏れを手動でマスクでき、同じ語もまとめて隠せ�
   await expect(output).toContainText('電動ベッド');
 });
 
+test('PDF を読み込むと、ページの文字（日本語を含む）が検査される', async ({ context, extensionId }) => {
+  const { buildPdf } = await import('../unit/pdf-fixture');
+  const pdf = buildPdf([['Mail: sato.hanako@example.co.jp', '担当は田中花子さんです'], []]);
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await page.getByLabel('読み込む Excel・CSV・PDF ファイル').setInputFiles({ name: '面談記録.pdf', mimeType: 'application/pdf', buffer: Buffer.from(pdf) });
+  await expect(page.getByLabel('解析する文章')).toHaveValue('【ページ 1】\nMail: sato.hanako@example.co.jp\n担当は田中花子さんです');
+  const notes = page.getByRole('list', { name: 'ファイルの取込結果' });
+  await expect(notes).toContainText('「面談記録.pdf」（2 ページ）の文字を取り込みました');
+  await expect(notes).toContainText('文字のないページがあります（2 ページ）');
+  await expect(page.getByLabel('加工後の文章')).not.toContainText('sato.hanako@example.co.jp', { timeout: 90_000 });
+});
+
 test('Excel ファイルを読み込むと、セルの文字が検査される', async ({ context, extensionId }) => {
   const { strToU8, zipSync } = await import('fflate');
   const xlsx = zipSync({
@@ -138,7 +151,7 @@ test('Excel ファイルを読み込むと、セルの文字が検査される',
   });
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  await page.getByLabel('読み込む Excel・CSV ファイル').setInputFiles({ name: '顧客.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(xlsx) });
+  await page.getByLabel('読み込む Excel・CSV・PDF ファイル').setInputFiles({ name: '顧客.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(xlsx) });
   await expect(page.getByLabel('解析する文章')).toHaveValue('【シート: 顧客】\n連絡先\tsato.hanako@example.co.jp');
   await expect(page.getByRole('list', { name: 'ファイルの取込結果' })).toContainText('画像は取り込んでいません');
   await expect(page.getByLabel('加工後の文章')).not.toContainText('sato.hanako@example.co.jp', { timeout: 90_000 });

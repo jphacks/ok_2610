@@ -1,4 +1,5 @@
 import { useRef, useState, type DragEvent } from 'react';
+import { PDF_EXTENSION, PdfError, readPdfFile } from '../../infra/pdf';
 import { ACCEPTED_EXTENSIONS, readSpreadsheetFile, SpreadsheetError, type SpreadsheetSource } from '../../infra/spreadsheet';
 import { getActiveTab, importSelection } from '../../infra/tabs';
 import { useStore } from '../store';
@@ -16,6 +17,7 @@ export function InputPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [fileNotes, setFileNotes] = useState<string[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [reading, setReading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   async function onImport() {
@@ -33,10 +35,15 @@ export function InputPanel() {
   }
 
   // Excel・CSV はこの画面の中で読み、セルの文字だけを入力欄に入れる（Issue #10）
+  // PDF はページ上の文字を取り出して、ふつうの文章として入力欄に入れる（Issue #9）
   async function onFile(file: File | undefined) {
     if (!file) return;
     setMessage(null);
     setFileNotes([]);
+    if (file.name.toLowerCase().endsWith(PDF_EXTENSION)) {
+      await onPdf(file);
+      return;
+    }
     try {
       const { text: imported, notes, source } = await readSpreadsheetFile(file);
       if (!imported.trim()) setMessage('ファイルに文字の入ったセルがありませんでした。');
@@ -47,6 +54,20 @@ export function InputPanel() {
     } catch (e) {
       setMessage(e instanceof SpreadsheetError ? e.message : 'ファイルを読めませんでした。');
     } finally {
+      if (fileInput.current) fileInput.current.value = '';
+    }
+  }
+
+  async function onPdf(file: File) {
+    setReading(true);
+    try {
+      const { text: imported, notes, pageCount } = await readPdfFile(file);
+      setText(imported);
+      setFileNotes([`「${file.name}」（${pageCount} ページ）の文字を取り込みました。`, ...notes]);
+    } catch (e) {
+      setMessage(e instanceof PdfError ? e.message : 'PDF を読めませんでした。');
+    } finally {
+      setReading(false);
       if (fileInput.current) fileInput.current.value = '';
     }
   }
@@ -91,7 +112,7 @@ export function InputPanel() {
           onChange={(e) => setText(e.target.value)}
           onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
           onDrop={onDrop}
-          placeholder="文章を貼り付け、またはExcel・CSVをドロップ"
+          placeholder="文章を貼り付け、またはExcel・CSV・PDFをドロップ"
           rows={3}
           aria-label="解析する文章"
         />
@@ -101,16 +122,16 @@ export function InputPanel() {
           <Icon name="import" />
           選択文を取り込む
         </button>
-        <button type="button" onClick={() => fileInput.current?.click()}>
+        <button type="button" onClick={() => fileInput.current?.click()} disabled={reading}>
           <Icon name="file" />
-          {fileSource ? '別のファイルを読込' : 'Excel・CSV を読込'}
+          {reading ? 'PDF を読込中…' : fileSource ? '別のファイルを読込' : 'ファイルを読込'}
         </button>
         <input
           ref={fileInput}
           type="file"
-          accept={ACCEPTED_EXTENSIONS.join(',')}
+          accept={[...ACCEPTED_EXTENSIONS, PDF_EXTENSION].join(',')}
           hidden
-          aria-label="読み込む Excel・CSV ファイル"
+          aria-label="読み込む Excel・CSV・PDF ファイル"
           onChange={(e) => void onFile(e.target.files?.[0])}
         />
         <button type="button" className="ghost clear-button" onClick={() => setConfirmOpen(true)} disabled={!text}>
