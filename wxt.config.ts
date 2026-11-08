@@ -1,5 +1,11 @@
+import { readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { defineConfig } from 'wxt';
 import type { Plugin } from 'vite';
+
+// PDF.js が日本語フォントの文字を読むのに使う CMap を pdf-cmaps/ に同梱する（Issue #9）。外部の CDN からは取らない
+const PDF_CMAPS_DIR = join(dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')), 'cmaps');
 
 // 対応AIサイト。継続的な連携を利用者が有効にしたときだけ、ドメイン単位で権限を求める（SEC-01）
 const AI_SITES = ['https://gemini.google.com/*', 'https://chatgpt.com/*', 'https://claude.ai/*'];
@@ -19,6 +25,13 @@ export default defineConfig({
   srcDir: 'src',
   imports: false,
   modules: ['@wxt-dev/module-react'],
+  hooks: {
+    'build:publicAssets': (_, files) => {
+      for (const name of readdirSync(PDF_CMAPS_DIR)) {
+        if (name.endsWith('.bcmap')) files.push({ absoluteSrc: join(PDF_CMAPS_DIR, name), relativeDest: `pdf-cmaps/${name}` });
+      }
+    },
+  },
   vite: () => ({
     plugins: [dropBundledOrtWasm()],
     worker: { plugins: () => [dropBundledOrtWasm()] },
