@@ -1,16 +1,17 @@
 import fontkit from '@pdf-lib/fontkit';
-import { PDFRef, PDFStream } from 'pdf-lib';
+import { PDFObjectCopier, PDFRef, PDFStream, type PDFDocument } from 'pdf-lib';
 import { restoreLabels as restoreText } from '../../core/restore';
 import { loadEditable, PdfImportError } from './document';
 import { imageInfo, ocrText, replaceImage, worthOcr, type PaintGroup } from './images';
 import { digestBytes, embedLabelFont, splitLines, type PdfEnv } from './mask';
 import { streamBytes } from './objects';
-import { applyPieces, PdfEditError, spanWidth, type Piece } from './rewrite';
+import { applyPieces, PdfEditError, spanWidth, type Piece, type RunGlyph } from './rewrite';
 import { flattenAnnotations } from './sanitize';
-import { buildTextModel, pageText, type TextModel } from './textmodel';
+import { buildTextModel, pageText, type GlyphRef, type TextModel } from './textmodel';
 
 // AIなどから戻ってきた PDF の中のラベルを、元の語に戻す（Issue #9）。
-// 文字のラベルは、その位置・幅のまま元の語に書き換える。自分がマスクした画像は元の画素に戻し、
+// 文字のラベルは、その位置・幅のまま元の語に書き換える。マスクした元の PDF が手元にあれば、元の語を
+// 元のフォント・大きさ・1文字ずつの位置のまま書き戻す（書体や太さも元どおりになる）。ないときは同梱のフォントで書く。自分がマスクした画像は元の画素に戻し、
 // それ以外の画像は OCR でラベルを探して、元の語を描き込む。
 
 export type PdfRestoreInput = {
@@ -66,8 +67,10 @@ export async function restorePdf(input: PdfRestoreInput, env: PdfEnv): Promise<P
   const notes: string[] = [];
 
   // ---- 文字 ----
+  const original = input.original ? await loadOriginal(input.original.base, doc) : null;
   const pieces: Piece[] = [];
   let replaced = 0;
+  let substituted = 0;
   const unmatched = new Set<string>();
   const byPage: number[][] = Array.from({ length: model.pageCount }, () => []);
   model.glyphs.forEach((g, i) => byPage[g.page]?.push(i));
@@ -83,6 +86,9 @@ export async function restorePdf(input: PdfRestoreInput, env: PdfEnv): Promise<P
       if (!glyphs.length) continue;
       splitLines(model, glyphs).forEach((line, k) => {
         if (k > 0) return pieces.push({ glyphs: line, text: '' });
+        const run = original && originalRun(original, model.glyphs[line[0]!]!, hit.original);
+        if (run) return pieces.push({ glyphs: line, text: '', run });
+        substituted++;
         // 自分が加工した PDF では、ラベルの後ろに元の語の幅だけ空きが残っている。そこまで使って元の大きさで書く
         const after = trailing(model, line[line.length - 1]!);
         pieces.push({ glyphs: line, text: hit.original, width: spanWidth(line.map((i) => model.glyphs[i]!)) + after.gap, size: after.size });
@@ -90,6 +96,7 @@ export async function restorePdf(input: PdfRestoreInput, env: PdfEnv): Promise<P
       replaced++;
     }
   }
+  if (substituted) notes.push(`${substituted}箇所は元の PDF の同じ場所に見つからなかったため、同梱のゴシック体で書きました（書体と太さが元と違って見えることがあります）。`);
   try {
     const font = await embedLabelFont(doc, await env.labelFont(), pieces.map((x) => x.text));
     applyPieces(doc, model, pieces, font);
@@ -164,6 +171,101 @@ export async function restorePdf(input: PdfRestoreInput, env: PdfEnv): Promise<P
 
   const bytes = await doc.save({ useObjectStreams: false });
   return { bytes, fileName: restoredPdfName(input.fileName), replaced, images, unmatched: [...unmatched], notes };
+}
+
+/** マスクの土台にした元の PDF。ページごとの文章と、フォントを復元先にコピーする仕組み */
+type Original = { model: TextModel; pages: { text: string; map: number[] }[]; font: (ref: PDFRef) => PDFRef };
+
+async function loadOriginal(base: Uint8Array, dest: PDFDocument): Promise<Original | null> {
+  try {
+    const src = await loadEditable(base);
+    const model = buildTextModel(src);
+    const byPage: number[][] = Array.from({ length: model.pageCount }, () => []);
+    model.glyphs.forEach((g, i) => byPage[g.page]?.push(i));
+    const copier = PDFObjectCopier.for(src.context, dest.context);
+    const copied = new Map<PDFRef, PDFRef>();
+    const font = (ref: PDFRef) => {
+      let r = copied.get(ref);
+      if (!r) copied.set(ref, (r = copier.copy(ref)));
+      return r;
+    };
+    return { model, pages: byPage.map((indices) => pageText(model.glyphs, indices)), font };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ラベルの位置にあった元の語を、元の PDF から探して1文字ずつ取り出す。
+ * 同じ語がページに何度も出るときは、ラベルの書き出しの点にいちばん近いものを選ぶ。見つからなければ null
+ */
+export function originalRun(original: Pick<Original, 'model' | 'pages' | 'font'>, label: GlyphRef, word: string): RunGlyph[] | null {
+  const page = original.pages[label.page];
+  if (!page || !word) return null;
+  const glyphs = original.model.glyphs;
+  let best: { indices: number[]; d: number } | null = null;
+  for (let at = page.text.indexOf(word); at >= 0; at = page.text.indexOf(word, at + 1)) {
+    const indices: number[] = [];
+    for (let i = at; i < at + word.length; i++) {
+      const v = page.map[i]!;
+      if (v >= 0 && indices[indices.length - 1] !== v) indices.push(v);
+    }
+    const g0 = indices.length ? glyphs[indices[0]!]! : null;
+    const len = g0 ? Math.hypot(g0.dx, g0.dy) : 0;
+    if (!g0 || len < 1e-9) continue;
+    const ex = label.x - g0.x;
+    const ey = label.y - g0.y;
+    const along = Math.abs((ex * g0.dx + ey * g0.dy) / len);
+    const across = Math.abs((-ex * g0.dy + ey * g0.dx) / len);
+    // ラベルは小さくしたとき少し持ち上げるので、垂直の向きは文字の高さまで許す
+    if (along > g0.h * 0.5 || across > g0.h) continue;
+    if (!best || along + across < best.d) best = { indices, d: along + across };
+  }
+  if (!best) return null;
+
+  const g0 = glyphs[best.indices[0]!]!;
+  const len = Math.hypot(g0.dx, g0.dy);
+  const ux = g0.dx / len;
+  const uy = g0.dy / len;
+  // ユーザー空間から文字空間への倍率（行の向きと、それに垂直な向き）
+  const sAlong = len / Math.abs(g0.adv);
+  const sAcross = g0.h / g0.state.size;
+  if (!Number.isFinite(sAlong) || !Number.isFinite(sAcross) || sAlong <= 0 || sAcross <= 0) return null;
+  const run: RunGlyph[] = [];
+  for (const i of best.indices) {
+    const g = glyphs[i]!;
+    const font = g.state.font;
+    const glen = Math.hypot(g.dx, g.dy);
+    if (g.vertical || !font?.ref || font.subtype === 'Type3' || !g.state.size || !g.state.th || !Number.isFinite(g.width)) return null;
+    // 向きの違う文字（回転した行など）は、同じ行の数値では動かせない
+    if (glen > 1e-9 && Math.abs(g.dx * uy - g.dy * ux) / glen > 1e-3) return null;
+    const bytes = showBytes(original.model, g);
+    if (!bytes) return null;
+    const ex = g.x - g0.x;
+    const ey = g.y - g0.y;
+    run.push({
+      font: original.font(font.ref),
+      size: g.state.size,
+      th: g.state.th,
+      tr: g.state.tr,
+      bytes,
+      along: (ex * ux + ey * uy) / sAlong,
+      rise: g0.state.ts + (-ex * uy + ey * ux) / sAcross,
+      advance: (g.width / 1000) * g.state.size * g.state.th,
+    });
+  }
+  return run;
+}
+
+/** 文字を描いた命令の中の、その文字のバイト列 */
+function showBytes(model: TextModel, g: GlyphRef): Uint8Array | null {
+  const o = model.units[g.unit]?.ops[g.op];
+  if (!o) return null;
+  let t;
+  if (o.op === 'TJ' && o.args[0]?.t === 'arr') t = o.args[0].items[g.part];
+  else if (o.op === 'Tj' || o.op === "'") t = o.args[0];
+  else if (o.op === '"') t = o.args[2];
+  return t?.t === 'str' ? t.bytes.slice(g.start, g.end) : null;
 }
 
 /**

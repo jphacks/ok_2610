@@ -147,6 +147,42 @@ describe('PDF のまま元に戻す', () => {
     const nameBefore = positionOf(before, '田中花子')!;
     const nameAfter = positionOf(after, '田中花子')!;
     expect(Math.abs(nameBefore.x - nameAfter.x)).toBeLessThan(0.01);
+    // 元の PDF が手元にないときは同梱のフォントで書き、そのことを伝える
+    expect(back.notes.join(' ')).toContain('同梱のゴシック体');
+  });
+
+  it('元の PDF があれば、元のフォント・大きさ・1文字ずつの位置のまま書き戻す', async () => {
+    const { restorePdf } = await import('../../src/infra/pdf/restore');
+    const src = await importPdf('面談.pdf', await samplePdf(), null);
+    const result = await run(src.text);
+    const masked = await exportMaskedPdf(src, result.segments, env);
+    const back = await restorePdf(
+      { fileName: masked.fileName, bytes: masked.bytes, restoreMap: result.restoreMap, generalizedMap: result.generalizedMap, original: { base: src.base, maskedImages: [] } },
+      env,
+    );
+    expect(back.notes).toEqual([]);
+    expect(back.replaced).toBeGreaterThanOrEqual(4);
+    const before = buildTextModel(await loadEditable(src.base));
+    const after = buildTextModel(await loadEditable(back.bytes));
+    expect(textOf(after).replace(/\s/g, '')).toBe(textOf(before).replace(/\s/g, ''));
+    // 書き戻した文字は、元と同じ字形・大きさで、元と同じ位置にある
+    for (const word of ['田中花子', '090-1234-5678', 'sato@example.com']) {
+      const at = (m: typeof before) => {
+        const { text, map } = pageText(m.glyphs, m.glyphs.map((_, i) => i));
+        const i = text.indexOf(word);
+        return [...new Set(Array.from({ length: word.length }, (_, k) => map[i + k]!).filter((v) => v >= 0))].map((v) => m.glyphs[v]!);
+      };
+      const a = at(before);
+      const b = at(after);
+      expect(b.length, word).toBe(a.length);
+      b.forEach((g, k) => {
+        expect(Math.abs(g.x - a[k]!.x), word).toBeLessThan(0.01);
+        expect(Math.abs(g.y - a[k]!.y), word).toBeLessThan(0.01);
+        expect(g.state.size, word).toBe(a[k]!.state.size);
+        expect(g.state.font?.baseFont, word).toBe(a[k]!.state.font?.baseFont);
+        expect(g.state.fontName?.startsWith('TCLabel'), word).toBe(false);
+      });
+    }
   });
 });
 
