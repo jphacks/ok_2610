@@ -148,4 +148,8 @@ npm run test:e2e       # ビルドして、拡張を読み込んだ Chromium で
 npm run lint && npm run compile
 ```
 
+NER モデル（`public/models`・`public/ort`）は、元の作業フォルダに一度置けば足ります。`git worktree` で作った作業フォルダでビルドすると、そこに無いモデルを元の作業フォルダの `public/` から出力（`.output/`）にだけ足します。
+
+変更を試すときは、`npm run build` のあと `chrome://extensions` で拡張の再読み込み（↻）を押すだけで済みます。
+
 設計は [ARCHITECTURE.md](ARCHITECTURE.md)、技術の選定理由は [TECH_SELECTION.md](TECH_SELECTION.md)、要件は [要件定義書](個人情報マスキング判断支援ツール_詳細要件定義書.md) を参照してください。
