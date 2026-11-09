@@ -1,6 +1,6 @@
 import type { OutputSegment } from '../../core/model/types';
 import { restoreLabels as restoreText } from '../../core/restore';
-import { faceLabel, faceNotes, type FaceBox, type FaceDetector } from '../face';
+import { faceLabel, faceNotes, restoreFaces, type FaceBox, type FaceDetector } from '../face';
 import { ocrText, type OcrChar, type OcrEngine, type PaintGroup, type Rgba } from '../pdf/images';
 import { changedSpans, digestBytes, lineBoxes, MANUAL_LABEL } from '../pdf/mask';
 import { findLabels } from '../pdf/restore';
@@ -143,7 +143,7 @@ export async function exportMaskedImage(src: ImageSource, segments: OutputSegmen
   let faces = 0;
   src.faces.forEach((f, i) => {
     if (keptFaces.includes(i)) return;
-    groups.push({ boxes: [f], label: faceLabel(i) });
+    groups.push({ boxes: [f], label: faceLabel(i), center: true });
     faces++;
   });
   let manual = 0;
@@ -176,8 +176,11 @@ export type ImageRestoreInput = {
   bytes: Uint8Array;
   restoreMap: Record<string, string>;
   generalizedMap: Record<string, string>;
-  /** 加工の土台にした元の画像と、書き出した画像の指紋。自分が加工した画像なら元の画素に戻す */
-  original?: { base: Rgba; digest: string | null };
+  /**
+   * 加工の土台にした元の画像と、書き出した画像の指紋。自分が加工した画像なら元の画素に戻す。
+   * faces（取り込んだときに見つけた顔）があれば、手を加えられた画像でも「[顔N]」の所に元の顔を貼り戻す
+   */
+  original?: { base: Rgba; digest: string | null; faces?: FaceBox[] };
 };
 
 export type ImageRestoreResult = { bytes: Uint8Array; fileName: string; replaced: number; images: number; unmatched: string[]; notes: string[] };
@@ -214,14 +217,16 @@ export async function restoreImage(input: ImageRestoreInput, env: ImageFileEnv):
     groups.push({ boxes: [{ x0: Math.min(...cs.map((c) => c.x0)), y0: Math.min(...cs.map((c) => c.y0)), x1: Math.max(...cs.map((c) => c.x1)), y1: Math.max(...cs.map((c) => c.y1)) }], label: hit.original });
   }
   const unmatched = restoreText(o.text, input.restoreMap, input.generalizedMap).unmatched;
-  if (!groups.length) return { bytes: new Uint8Array(), fileName, replaced: 0, images: 0, unmatched, notes: [] };
-  const bytes = await env.encode(await env.paint(img, groups));
-  return {
-    bytes,
-    fileName,
-    replaced: groups.length,
-    images: 1,
-    unmatched,
-    notes: ['画像の中のラベルを OCR で探して、元の語を描き込みました。読み違えたラベルは戻らないことがあります。'],
-  };
+  const original = input.original;
+  const faces = original?.faces?.length
+    ? await restoreFaces(groups.length ? await env.paint(img, groups) : img, { text: o.text, map: o.map, chars }, original.faces, () => original.base)
+    : null;
+  if (!groups.length && !faces?.restored.length) return { bytes: new Uint8Array(), fileName, replaced: 0, images: 0, unmatched, notes: [] };
+  const bytes = await env.encode(faces ? faces.image : await env.paint(img, groups));
+  const notes: string[] = [];
+  if (groups.length) notes.push('画像の中のラベルを OCR で探して、元の語を描き込みました。読み違えたラベルは戻らないことがあります。');
+  if (faces?.restored.length) notes.push(`顔 ${faces.restored.length} 件（${faces.restored.map(faceLabel).join('・')}）を、ラベルの位置に元の顔を貼って戻しました。顔の位置や大きさが変わっていると、ずれることがあります。`);
+  // 戻した顔のラベルは「対応表にないラベル」として知らせない
+  const back = new Set((faces?.restored ?? []).map(faceLabel));
+  return { bytes, fileName, replaced: groups.length + (faces?.restored.length ?? 0), images: 1, unmatched: unmatched.filter((u) => !back.has(u)), notes };
 }

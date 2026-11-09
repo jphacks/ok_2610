@@ -60,7 +60,15 @@ export function RestorePanel() {
               bytes: new Uint8Array(await file.arrayBuffer()),
               restoreMap: before.result.restoreMap,
               generalizedMap: before.result.generalizedMap,
-              ...(src ? { original: { base: src.base, maskedImages: useStore.getState().pdfMaskedImages } } : {}),
+              ...(src
+                ? {
+                    original: {
+                      base: src.base,
+                      maskedImages: useStore.getState().pdfMaskedImages,
+                      faces: src.faces.map((f) => ({ objectNumber: src.images[f.image]!.objectNumber, generation: src.images[f.image]!.generation, box: f.box })),
+                    },
+                  }
+                : {}),
             },
             env,
           );
@@ -96,7 +104,7 @@ export function RestorePanel() {
               bytes: new Uint8Array(await file.arrayBuffer()),
               restoreMap: before.result.restoreMap,
               generalizedMap: before.result.generalizedMap,
-              ...(src ? { original: { base: src.base, digest: useStore.getState().maskedImageDigest } } : {}),
+              ...(src ? { original: { base: src.base, digest: useStore.getState().maskedImageDigest, faces: src.faces } } : {}),
             },
             env,
           );
