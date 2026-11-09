@@ -20,8 +20,12 @@ export function RestorePanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [restoredFile, setRestoredFile] = useState<SpreadsheetRestore | null>(null);
   const [fileMessage, setFileMessage] = useState<string | null>(null);
+  // 文字のラベルがなくても、画像・PDF の顔や、保存した塗りつぶし済みの画像はファイルから戻せる（顔写真だけの画像など）
+  const fileOnly = useStore((s) => (s.source?.kind === 'image' || s.source?.kind === 'pdf') && (s.source.faces.length > 0 || s.maskedImageDigest !== null || s.pdfMaskedImages.length > 0));
   const fileInput = useRef<HTMLInputElement>(null);
-  if (!result || (Object.keys(result.restoreMap).length === 0 && Object.keys(result.generalizedMap).length === 0)) return null;
+  if (!result) return null;
+  const hasLabels = Object.keys(result.restoreMap).length > 0 || Object.keys(result.generalizedMap).length > 0;
+  if (!hasLabels && !fileOnly) return null;
 
   async function restore() {
     const before = useStore.getState();
@@ -145,39 +149,47 @@ export function RestorePanel() {
           <h2 id="restore-title">AIの回答を復元</h2>
           <span className="chip chip-muted">任意</span>
         </summary>
-        <p className="hint">「人物A」などのラベルや、「30代」などに一般化した語を元の語に戻します。加工後の文章のほかの所にも同じ語がある一般化と、削除した情報は戻せません。</p>
-        <textarea rows={5} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="AIの回答を貼り付け" aria-label="AIの回答" />
-        <button
-          type="button"
-          disabled={!answer.trim() || !current}
-          onClick={() => void restore()}
-        >
-          ラベルを元の語に戻す
-        </button>
-        {restored && (
+        {hasLabels && (
           <>
-            <div className="output-preview" aria-label="元に戻した文章">
-              {restored.restored}
-            </div>
-            <p className="hint">{restored.replacedCount}箇所を戻しました。</p>
-            {restored.generalized.length > 0 && (
-              <p className="hint">
-                一般化から戻した語: {restored.generalized.map((g) => `${g.from}→${g.to}`).join('、')}（AIが一般的な意味で使った語も戻るので、確かめてください）
-              </p>
-            )}
-            {restored.unmatched.length > 0 && <p className="hint warn">戻せなかったラベル: {restored.unmatched.join('、')}（AIが書き換えた可能性があります）</p>}
-            <button
-              type="button"
-              disabled={!current}
-              onClick={async () => setMessage((await copyText(restored.restored)) ? 'コピーしました。原文を含むので、外部のサービスには貼り付けないでください。' : 'コピーできませんでした。')}
-            >
-              コピー
-            </button>
-            {message && <p className="hint">{message}</p>}
+          <p className="hint">「人物A」などのラベルや、「30代」などに一般化した語を元の語に戻します。加工後の文章のほかの所にも同じ語がある一般化と、削除した情報は戻せません。</p>
+          <textarea rows={5} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="AIの回答を貼り付け" aria-label="AIの回答" />
+          <button
+            type="button"
+            disabled={!answer.trim() || !current}
+            onClick={() => void restore()}
+          >
+            ラベルを元の語に戻す
+          </button>
+          {restored && (
+            <>
+              <div className="output-preview" aria-label="元に戻した文章">
+                {restored.restored}
+              </div>
+              <p className="hint">{restored.replacedCount}箇所を戻しました。</p>
+              {restored.generalized.length > 0 && (
+                <p className="hint">
+                  一般化から戻した語: {restored.generalized.map((g) => `${g.from}→${g.to}`).join('、')}（AIが一般的な意味で使った語も戻るので、確かめてください）
+                </p>
+              )}
+              {restored.unmatched.length > 0 && <p className="hint warn">戻せなかったラベル: {restored.unmatched.join('、')}（AIが書き換えた可能性があります）</p>}
+              <button
+                type="button"
+                disabled={!current}
+                onClick={async () => setMessage((await copyText(restored.restored)) ? 'コピーしました。原文を含むので、外部のサービスには貼り付けないでください。' : 'コピーできませんでした。')}
+              >
+                コピー
+              </button>
+              {message && <p className="hint">{message}</p>}
+            </>
+          )}
           </>
         )}
         <div className="restore-file">
-          <p className="hint">AIが作った・手を加えた Excel・CSV・PDF・画像も、中のラベルを元の語に戻して保存できます。PDF はレイアウトを保ったまま戻します。画像の中のラベルは OCR で探して元の語を描き込みます。</p>
+          <p className="hint">
+            {hasLabels
+              ? 'AIが作った・手を加えた Excel・CSV・PDF・画像も、中のラベルを元の語に戻して保存できます。PDF はレイアウトを保ったまま戻します。画像の中のラベルは OCR で探して元の語を描き込みます。'
+              : '塗りつぶして保存した画像・PDF を読み込むと、「[顔1]」などの所に元の顔を戻して保存できます。AIが手を加えた画像では、ラベルを OCR で探して戻します。'}
+          </p>
           <button type="button" disabled={!current} onClick={() => fileInput.current?.click()}>
             <Icon name="file" />
             ファイルを読込んで戻す
