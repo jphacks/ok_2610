@@ -1,5 +1,6 @@
 import { useRef, useState, type DragEvent } from 'react';
 import { MAX_PDF_BYTES, PDF_EXTENSION, PdfError, readPdfFile } from '../../infra/pdf';
+import { IMAGE_EXTENSIONS, isImageFile } from '../../infra/image/image';
 import { ACCEPTED_EXTENSIONS, readSpreadsheetFile, SpreadsheetError } from '../../infra/spreadsheet';
 import { getActiveTab, importSelection } from '../../infra/tabs';
 import { useStore, type FileSource } from '../store';
@@ -45,6 +46,10 @@ export function InputPanel() {
       await onPdf(file);
       return;
     }
+    if (isImageFile(file.name)) {
+      await onImage(file);
+      return;
+    }
     try {
       const { text: imported, notes, source } = await readSpreadsheetFile(file);
       if (!imported.trim()) setMessage('ファイルに文字の入ったセルがありませんでした。');
@@ -85,6 +90,32 @@ export function InputPanel() {
     } catch (e) {
       if (e instanceof Error && e.name === 'PdfImportError') await onPdfTextOnly(file, e.message);
       else setMessage(e instanceof PdfError ? e.message : 'PDF を読めませんでした。');
+    } finally {
+      setReading(false);
+      setProgress(null);
+      if (fileInput.current) fileInput.current.value = '';
+    }
+  }
+
+  // 画像は中の文字を端末内の OCR で読み、文字の位置を記録して取り込む。加工後は塗りつぶしてラベルを書いた画像で保存できる（Issue #11）
+  async function onImage(file: File) {
+    const sessionId = useStore.getState().sessionId;
+    setReading(true);
+    setProgress('画像の文字を読み取り中…');
+    try {
+      const { openImageEnv } = await import('../../infra/image/browser');
+      const { importImage } = await import('../../infra/image/image');
+      const env = await openImageEnv();
+      try {
+        const src = await importImage(file.name, new Uint8Array(await file.arrayBuffer()), env);
+        if (useStore.getState().sessionId !== sessionId) return;
+        importFile(src);
+        setFileNotes([`「${file.name}」（${src.width}×${src.height}）の中の文字を取り込みました。`, ...src.notes]);
+      } finally {
+        await env.dispose();
+      }
+    } catch (e) {
+      setMessage(e instanceof Error && e.name === 'ImageImportError' ? e.message : '画像を読めませんでした。');
     } finally {
       setReading(false);
       setProgress(null);
@@ -136,7 +167,9 @@ export function InputPanel() {
             <p className="hint">
               {fileSource.kind === 'pdf'
                 ? 'ページの文字と画像の中の文字を検査しています。PDF の形のまま保存できます。'
-                : 'セルの内容を検査しています。結果は下の表で確認できます。'}
+                : fileSource.kind === 'image'
+                  ? '画像の中の文字を OCR で読んで検査しています。隠す語を塗りつぶした画像として保存できます。'
+                  : 'セルの内容を検査しています。結果は下の表で確認できます。'}
             </p>
           </div>
         </div>
@@ -147,7 +180,7 @@ export function InputPanel() {
           onChange={(e) => setText(e.target.value)}
           onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
           onDrop={onDrop}
-          placeholder="文章を貼り付け、またはExcel・CSV・PDFをドロップ"
+          placeholder="文章を貼り付け、またはExcel・CSV・PDF・画像をドロップ"
           rows={3}
           aria-label="解析する文章"
         />
@@ -164,9 +197,9 @@ export function InputPanel() {
         <input
           ref={fileInput}
           type="file"
-          accept={[...ACCEPTED_EXTENSIONS, PDF_EXTENSION].join(',')}
+          accept={[...ACCEPTED_EXTENSIONS, PDF_EXTENSION, ...IMAGE_EXTENSIONS].join(',')}
           hidden
-          aria-label="読み込む Excel・CSV・PDF ファイル"
+          aria-label="読み込む Excel・CSV・PDF・画像ファイル"
           onChange={(e) => void onFile(e.target.files?.[0])}
         />
         <button type="button" className="ghost clear-button" onClick={() => setConfirmOpen(true)} disabled={!text}>
@@ -197,6 +230,7 @@ export function InputPanel() {
 function fileSummary(source: FileSource): string {
   if (source.kind === 'csv') return 'CSV';
   if (source.kind === 'pdf') return `PDF・${source.pageCount} ページ`;
+  if (source.kind === 'image') return `画像・${source.width}×${source.height}`;
   const cells = source.sheets.reduce((n, s) => n + s.cells.length, 0);
   return `${source.sheets.length} シート・${cells.toLocaleString()} セル`;
 }

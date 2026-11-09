@@ -237,7 +237,7 @@ function checkSameModel(model: TextModel, src: PdfSource) {
 }
 
 /** OCR の文字の箱を、行ごとの1つの箱にまとめる */
-function lineBoxes(chars: { x0: number; y0: number; x1: number; y1: number }[]) {
+export function lineBoxes(chars: { x0: number; y0: number; x1: number; y1: number }[]) {
   const boxes: { x0: number; y0: number; x1: number; y1: number }[] = [];
   for (const c of chars) {
     const last = boxes[boxes.length - 1];

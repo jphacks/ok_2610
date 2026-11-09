@@ -6,6 +6,7 @@ import { workerClient } from '../../infra/analysis-session';
 import { ACCEPTED_EXTENSIONS, readSpreadsheetFile, SpreadsheetError } from '../../infra/spreadsheet';
 import { restoreSpreadsheet, type SpreadsheetRestore } from '../../infra/spreadsheet-restore';
 import { PDF_EXTENSION } from '../../infra/pdf';
+import { IMAGE_EXTENSIONS, isImageFile } from '../../infra/image/image';
 import { log } from '../../infra/logger';
 import { useStore } from '../store';
 import { Icon } from './Icon';
@@ -81,13 +82,49 @@ export function RestorePanel() {
         }
         return;
       }
+      if (isImageFile(file.name)) {
+        // 画像は、このパネルで加工した画像なら元の画素に戻し、それ以外は OCR でラベルを探して元の語を描く（Issue #11）
+        setFileMessage('画像を元に戻しています…');
+        const { openImageEnv } = await import('../../infra/image/browser');
+        const { restoreImage } = await import('../../infra/image/image');
+        const env = await openImageEnv();
+        try {
+          const src = before.source?.kind === 'image' ? before.source : null;
+          const value = await restoreImage(
+            {
+              fileName: file.name,
+              bytes: new Uint8Array(await file.arrayBuffer()),
+              restoreMap: before.result.restoreMap,
+              generalizedMap: before.result.generalizedMap,
+              ...(src ? { original: { base: src.base, digest: useStore.getState().maskedImageDigest } } : {}),
+            },
+            env,
+          );
+          if (useStore.getState().revision !== before.revision) return;
+          setFileMessage(null);
+          setRestoredFile({
+            bytes: value.bytes,
+            fileName: value.fileName,
+            mimeType: 'image/png',
+            cellCount: value.replaced + value.images,
+            replacedCount: value.replaced,
+            generalized: [],
+            unmatched: value.unmatched,
+            notes: value.notes,
+          });
+          log('restore', { image: true, replaced: value.replaced });
+        } finally {
+          await env.dispose();
+        }
+        return;
+      }
       const { source } = await readSpreadsheetFile(file);
       const value = restoreSpreadsheet(source, before.result.restoreMap, before.result.generalizedMap);
       if (useStore.getState().revision !== before.revision) return;
       setRestoredFile(value);
       log('restore', { file: true, cells: value.cellCount });
     } catch (e) {
-      if (useStore.getState().revision === before.revision) setFileMessage(e instanceof SpreadsheetError || (e instanceof Error && e.name === 'PdfRestoreError') ? (e as Error).message : 'ファイルを復元できませんでした。');
+      if (useStore.getState().revision === before.revision) setFileMessage(e instanceof SpreadsheetError || (e instanceof Error && (e.name === 'PdfRestoreError' || e.name === 'ImageRestoreError')) ? (e as Error).message : 'ファイルを復元できませんでした。');
     } finally {
       if (fileInput.current) fileInput.current.value = '';
     }
@@ -132,7 +169,7 @@ export function RestorePanel() {
           </>
         )}
         <div className="restore-file">
-          <p className="hint">AIが作った・手を加えた Excel・CSV・PDF も、中のラベルを元の語に戻して保存できます。PDF はレイアウトを保ったまま戻します。</p>
+          <p className="hint">AIが作った・手を加えた Excel・CSV・PDF・画像も、中のラベルを元の語に戻して保存できます。PDF はレイアウトを保ったまま戻します。画像の中のラベルは OCR で探して元の語を描き込みます。</p>
           <button type="button" disabled={!current} onClick={() => fileInput.current?.click()}>
             <Icon name="file" />
             ファイルを読込んで戻す
@@ -140,9 +177,9 @@ export function RestorePanel() {
           <input
             ref={fileInput}
             type="file"
-            accept={[...ACCEPTED_EXTENSIONS, PDF_EXTENSION].join(',')}
+            accept={[...ACCEPTED_EXTENSIONS, PDF_EXTENSION, ...IMAGE_EXTENSIONS].join(',')}
             hidden
-            aria-label="復元する Excel・CSV・PDF ファイル"
+            aria-label="復元する Excel・CSV・PDF・画像ファイル"
             onChange={(e) => void restoreFile(e.target.files?.[0])}
           />
           {fileMessage && !restoredFile && <p className="hint warn">{fileMessage}</p>}
@@ -151,7 +188,9 @@ export function RestorePanel() {
               <p className="hint" role="status">
                 {restoredFile.cellCount === 0
                   ? '戻せるラベルが見つかりませんでした。'
-                  : restoredFile.mimeType === 'application/pdf'
+                  : restoredFile.mimeType === 'image/png' && restoredFile.replacedCount === 0
+                    ? '元の画像に戻しました。'
+                  : restoredFile.mimeType === 'application/pdf' || restoredFile.mimeType === 'image/png'
                     ? `${restoredFile.replacedCount}箇所を戻しました。`
                     : `${restoredFile.cellCount}セル・${restoredFile.replacedCount}箇所を戻しました。`}
               </p>

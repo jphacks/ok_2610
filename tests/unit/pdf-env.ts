@@ -2,13 +2,14 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createCanvas, GlobalFonts, ImageData } from '@napi-rs/canvas';
+import { createCanvas, GlobalFonts, ImageData, loadImage } from '@napi-rs/canvas';
 import * as pdfjsLegacy from 'pdfjs-dist/legacy/build/pdf.mjs';
 import Tesseract from 'tesseract.js';
 import { tesseractOcr } from '../../src/infra/ocr';
 import type { Rgba } from '../../src/infra/pdf/images';
 import type { PdfEnv } from '../../src/infra/pdf/mask';
-import { makeImageEnv } from '../../src/infra/pdf/raster';
+import { makeImageEnv, paintGroups } from '../../src/infra/pdf/raster';
+import type { ImageFileEnv } from '../../src/infra/image/image';
 
 // テスト用の環境: Node 用の PDF.js・キャンバス・Tesseract で、ブラウザと同じ処理を通す
 
@@ -40,6 +41,23 @@ export const imageEnv = makeImageEnv({
   fontFamily: 'TCLabelFont',
   ocr,
 });
+
+/** 画像ファイル（Issue #11）用。ブラウザの createImageBitmap の代わりに Node 用キャンバスで読む */
+export const imageFileEnv: ImageFileEnv = {
+  ocr,
+  async decode(bytes) {
+    const im = await loadImage(Buffer.from(bytes));
+    const c = createCanvas(im.width, im.height);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, im.width, im.height);
+    ctx.drawImage(im, 0, 0);
+    const d = ctx.getImageData(0, 0, im.width, im.height);
+    return { width: im.width, height: im.height, data: new Uint8ClampedArray(d.data) };
+  },
+  encode: async (img) => new Uint8Array(toPng(img)),
+  paint: async (img, groups) => paintGroups({ createCanvas: (w, h) => createCanvas(w, h) as never, fontFamily: 'TCLabelFont' }, img, groups),
+};
 
 export const fullEnv: PdfEnv = { labelFont: async () => new Uint8Array(JP_FONT), images: imageEnv };
 export const textOnlyEnv: PdfEnv = { labelFont: async () => new Uint8Array(JP_FONT), images: null };
