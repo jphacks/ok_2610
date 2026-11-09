@@ -11,7 +11,8 @@ export const LABEL_FONT_FAMILY = 'TCLabelFont';
 const FONT_PATH = 'fonts/label.ttf';
 
 let fontReady: Promise<void> | null = null;
-function ensureCanvasFont(): Promise<void> {
+/** ラベルを描くフォントをキャンバスで使えるようにする（PDF の画像と画像ファイルで共通） */
+export function ensureCanvasFont(): Promise<void> {
   fontReady ??= (async () => {
     const face = new FontFace(LABEL_FONT_FAMILY, `url(${asset(FONT_PATH)})`);
     await face.load();
@@ -28,6 +29,23 @@ const loadFontBytes = () => (fontBytes ??= readBundledAsset(FONT_PATH));
 
 export type BrowserPdfEnv = PdfEnv & { dispose(): Promise<void> };
 
+export type BrowserOcr = ReturnType<typeof tesseractOcr>;
+
+/** 端末内の OCR（同梱の Tesseract）を起こす。使い終わったら terminate で止める */
+export async function openOcr(): Promise<BrowserOcr> {
+  const mod = await import('tesseract.js');
+  const tesseract = ((mod as unknown as { default?: typeof mod }).default ?? mod) as typeof mod;
+  return tesseractOcr({
+    tesseract,
+    encode: async (img) => {
+      const c = new OffscreenCanvas(img.width, img.height);
+      c.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
+      return c.convertToBlob({ type: 'image/png' });
+    },
+    workerOptions: { workerPath: asset('ocr/worker.min.js'), corePath: asset('ocr'), langPath: asset('ocr'), workerBlobURL: false },
+  });
+}
+
 /** ocr=false なら OCR を起こさない（画像の文字を読まない処理用） */
 export async function openPdfEnv(options: { ocr?: boolean } = {}): Promise<BrowserPdfEnv> {
   const pdfjs = await import('pdfjs-dist');
@@ -35,20 +53,7 @@ export async function openPdfEnv(options: { ocr?: boolean } = {}): Promise<Brows
   // 型定義では port が null 扱いだが、実装は Worker を受け取る
   const worker = new pdfjs.PDFWorker({ port: port as unknown as null });
   await ensureCanvasFont();
-  let ocr: ReturnType<typeof tesseractOcr> | null = null;
-  if (options.ocr !== false) {
-    const mod = await import('tesseract.js');
-    const tesseract = ((mod as unknown as { default?: typeof mod }).default ?? mod) as typeof mod;
-    ocr = tesseractOcr({
-      tesseract,
-      encode: async (img) => {
-        const c = new OffscreenCanvas(img.width, img.height);
-        c.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
-        return c.convertToBlob({ type: 'image/png' });
-      },
-      workerOptions: { workerPath: asset('ocr/worker.min.js'), corePath: asset('ocr'), langPath: asset('ocr'), workerBlobURL: false },
-    });
-  }
+  const ocr = options.ocr !== false ? await openOcr() : null;
   const images = makeImageEnv({
     pdfjs,
     createCanvas: (w, h) => {

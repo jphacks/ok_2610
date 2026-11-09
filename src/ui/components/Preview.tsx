@@ -73,7 +73,7 @@ export function Preview({ mode, onMode }: { mode: 'masked' | 'original'; onMode:
 
   const byId = new Map(result.candidates.map((c) => [c.id, c]));
   // 読み込んだ Excel・CSV は、文章に直さずシートの表として描く
-  const sheetSource = source && source.kind !== 'pdf' && source.text === result.text ? source : null;
+  const sheetSource = source && source.kind !== 'pdf' && source.kind !== 'image' && source.text === result.text ? source : null;
 
   const originalChunks: { start: number; text: string; id?: string }[] = [];
   let cursor = 0;

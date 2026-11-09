@@ -89,7 +89,8 @@ export function makeImageEnv(deps: RasterDeps): ImageEnv {
   };
 }
 
-function paintGroups(deps: RasterDeps, image: Rgba, groups: PaintGroup[]): Rgba {
+/** 箱を背景に近い色で塗り、最初の箱にラベルを書く。PDF の画像と画像ファイル（Issue #11）で共通 */
+export function paintGroups(deps: Pick<RasterDeps, 'createCanvas' | 'fontFamily'>, image: Rgba, groups: PaintGroup[]): Rgba {
   const canvas = deps.createCanvas(image.width, image.height);
   const ctx = canvas.getContext('2d') as Ctx2D;
   const id = ctx.createImageData(image.width, image.height);
