@@ -42,7 +42,7 @@ export async function openOcr(): Promise<BrowserOcr> {
       c.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
       return c.convertToBlob({ type: 'image/png' });
     },
-    workerOptions: { workerPath: asset('ocr/worker.min.js'), corePath: asset('ocr'), langPath: asset('ocr'), workerBlobURL: false },
+    workerOptions: { workerPath: asset('ocr/worker.js'), corePath: asset('ocr'), langPath: asset('ocr'), workerBlobURL: false },
   });
 }
 
