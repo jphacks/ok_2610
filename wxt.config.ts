@@ -1,6 +1,7 @@
-import { readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { defineConfig } from 'wxt';
 import type { Plugin } from 'vite';
 
@@ -21,6 +22,34 @@ const BUNDLED: { from: string; to: string }[] = [
   { from: join(pkgDir('@expo-google-fonts/biz-udpgothic'), '400Regular', 'BIZUDPGothic_400Regular.ttf'), to: 'fonts/label.ttf' },
   { from: join(pkgDir('@expo-google-fonts/biz-udpgothic'), 'LICENSE_FONT'), to: 'fonts/LICENSE_FONT.txt' },
 ];
+
+// NER のモデル（public/models）と ONNX Runtime の WASM（public/ort）は大きく、git には入れない（.gitignore）。
+// git worktree の作業フォルダには置かず、元の作業フォルダ（git の共通ディレクトリの親）の public/ にだけ置く運用なので、
+// 作業フォルダに無ければ、そこにあるものをビルドの出力にだけ足す。作業フォルダの public/ にあればそちらを使う（WXT が自動で写す）
+const NER_DIRS = ['models', 'ort'];
+const sharedNerFiles = (): { from: string; to: string }[] => {
+  if (NER_DIRS.every((d) => existsSync(join(import.meta.dirname, 'public', d)))) return [];
+  let mainRoot: string;
+  try {
+    const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: import.meta.dirname, encoding: 'utf8' }).trim();
+    mainRoot = resolve(dirname(common));
+  } catch {
+    return [];
+  }
+  if (mainRoot === resolve(import.meta.dirname)) return [];
+  const out: { from: string; to: string }[] = [];
+  for (const d of NER_DIRS) {
+    const base = join(mainRoot, 'public', d);
+    if (!existsSync(base)) continue;
+    for (const f of readdirSync(base, { recursive: true, withFileTypes: true })) {
+      if (!f.isFile()) continue;
+      const from = join(f.parentPath, f.name);
+      out.push({ from, to: `${d}/${relative(base, from).split(sep).join('/')}` });
+    }
+  }
+  if (out.length) console.log(`NER のモデルを ${join(mainRoot, 'public')} から出力に足します（${out.length} ファイル）`);
+  return out;
+};
 
 // 対応AIサイト。継続的な連携を利用者が有効にしたときだけ、ドメイン単位で権限を求める（SEC-01）
 const AI_SITES = ['https://gemini.google.com/*', 'https://chatgpt.com/*', 'https://claude.ai/*'];
@@ -55,7 +84,7 @@ export default defineConfig({
       for (const name of readdirSync(PDF_CMAPS_DIR)) {
         if (name.endsWith('.bcmap')) files.push({ absoluteSrc: join(PDF_CMAPS_DIR, name), relativeDest: `pdf-cmaps/${name}` });
       }
-      for (const f of BUNDLED) files.push({ absoluteSrc: f.from, relativeDest: f.to });
+      for (const f of [...BUNDLED, ...sharedNerFiles()]) files.push({ absoluteSrc: f.from, relativeDest: f.to });
     },
   },
   vite: () => ({
