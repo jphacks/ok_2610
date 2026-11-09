@@ -1,5 +1,6 @@
 import type { OutputSegment } from '../../core/model/types';
 import { restoreLabels as restoreText } from '../../core/restore';
+import { faceLabel, faceNotes, type FaceBox, type FaceDetector } from '../face';
 import { ocrText, type OcrChar, type OcrEngine, type PaintGroup, type Rgba } from '../pdf/images';
 import { changedSpans, digestBytes, lineBoxes, MANUAL_LABEL } from '../pdf/mask';
 import { findLabels } from '../pdf/restore';
@@ -28,6 +29,8 @@ export interface ImageFileEnv {
   /** 箱を背景に近い色で塗り、ラベルを書く */
   paint(image: Rgba, groups: PaintGroup[]): Promise<Rgba>;
   ocr: OcrEngine | null;
+  /** 顔の検出器。null なら顔は探さない（保存・復元では使わない） */
+  faces?: FaceDetector | null;
 }
 
 export type ImageSource = {
@@ -39,6 +42,8 @@ export type ImageSource = {
   /** 文章の各文字の出どころ: 0 以上は OCR の文字（ocrChars）の番号、-1 は区切り */
   charMap: Int32Array;
   ocrChars: OcrChar[];
+  /** 見つけた顔。保存するときは、利用者が残すと選んだもの以外を塗りつぶす */
+  faces: FaceBox[];
   width: number;
   height: number;
   notes: string[];
@@ -89,26 +94,37 @@ export async function importImage(fileName: string, bytes: Uint8Array, env: Imag
 
   const lines = await env.ocr.recognize(base);
   const o = ocrText(lines);
-  if (!o.text.trim()) throw new ImageImportError('画像から文字を読み取れませんでした。');
+  const faces = env.faces ? await env.faces.detect(base) : [];
+  // 文字がなくても顔があれば取り込む（顔写真だけの画像）。本文は空にせず、見出しだけを置く
+  if (!o.text.trim() && !faces.length) throw new ImageImportError('画像から文字も顔も見つかりませんでした。');
+  const text = o.text.trim() ? o.text : IMAGE_ONLY_TEXT;
   const ocrChars = lines.flatMap((l) => l.chars);
   return {
     kind: 'image',
     fileName,
     base,
-    text: o.text,
-    charMap: Int32Array.from(o.map),
+    text,
+    charMap: o.text.trim() ? Int32Array.from(o.map) : new Int32Array(text.length).fill(-1),
     ocrChars,
+    faces,
     width: base.width,
     height: base.height,
     notes: [
+      ...faceNotes(faces, !!env.faces),
       '画像の中の文字は端末内の OCR で読んでいます。読み違えた文字は検出から漏れることがあるので、「画像の仕上がりを確認」で確かめてください。',
       '撮影日時・位置などのファイル情報（EXIF）は取り込まず、保存する画像にも書きません。',
     ],
   };
 }
 
-/** 加工後の文章（segments）を、画像の上で塗りつぶしとラベルとして反映する */
-export async function exportMaskedImage(src: ImageSource, segments: OutputSegment[], env: ImageFileEnv, rects: ImageRect[] = []): Promise<MaskedImage> {
+/** 文字の見つからない画像の本文。検査する文字はないが、顔を隠して保存できるように取り込む */
+export const IMAGE_ONLY_TEXT = '【画像（文字なし）】';
+
+/**
+ * 加工後の文章（segments）を、画像の上で塗りつぶしとラベルとして反映する。
+ * 見つけた顔は、keptFaces（残すと選んだ顔の番号）以外を塗りつぶす
+ */
+export async function exportMaskedImage(src: ImageSource, segments: OutputSegment[], env: ImageFileEnv, rects: ImageRect[] = [], keptFaces: number[] = []): Promise<MaskedImage> {
   const text = segments.map((s) => (s.kind === 'changed' ? s.original : s.text)).join('');
   if (text !== src.text) throw new ImageExportError('読み込んだ画像と本文が一致しないため、画像としては保存できません。');
 
@@ -123,6 +139,13 @@ export async function exportMaskedImage(src: ImageSource, segments: OutputSegmen
     if (chars.length) groups.push({ boxes: lineBoxes(chars), label: sp.label });
   }
   const notes: string[] = [];
+  const textGroups = groups.length;
+  let faces = 0;
+  src.faces.forEach((f, i) => {
+    if (keptFaces.includes(i)) return;
+    groups.push({ boxes: [f], label: faceLabel(i) });
+    faces++;
+  });
   let manual = 0;
   for (const r of rects) {
     const box = clampRect(r, src.width, src.height);
@@ -132,7 +155,9 @@ export async function exportMaskedImage(src: ImageSource, segments: OutputSegmen
   }
   const painted = groups.length ? await env.paint(src.base, groups) : src.base;
   const bytes = await env.encode(painted);
-  if (groups.length - manual) notes.push(`画像の中の ${groups.length - manual} 箇所を塗りつぶし、ラベルを書き込みました。`);
+  if (textGroups) notes.push(`画像の中の ${textGroups} 箇所を塗りつぶし、ラベルを書き込みました。`);
+  if (faces) notes.push(`顔 ${faces} 件を塗りつぶしました。`);
+  if (keptFaces.length) notes.push(`残すと選んだ顔が ${keptFaces.length} 件あります。`);
   if (manual) notes.push(`手動で囲んだ ${manual} 箇所を塗りつぶしました。`);
   notes.push('PNG 形式で保存します。撮影日時・位置などのファイル情報は含みません。');
   return { bytes, fileName: maskedImageName(src.fileName), notes, digest: await digestBytes(bytes) };

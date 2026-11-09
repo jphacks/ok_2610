@@ -10,11 +10,12 @@ export function ImagePreview({ source }: { source: ImageSource }) {
   const result = useStore((s) => s.result);
   const rects = useStore((s) => s.imageRects);
   const setImageRects = useStore((s) => s.setImageRects);
+  const keptFaces = useStore((s) => s.keptFaces);
   const [url, setUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const key = `${result?.contentId ?? ''}|${result?.masked.length ?? 0}|${JSON.stringify(rects)}`;
+  const key = `${result?.contentId ?? ''}|${result?.masked.length ?? 0}|${JSON.stringify(rects)}|${keptFaces.join(',')}`;
   const shown = useRef<string | null>(null);
 
   useEffect(() => {
@@ -28,7 +29,7 @@ export function ImagePreview({ source }: { source: ImageSource }) {
         const { exportMaskedImage } = await import('../../infra/image/image');
         const env = await openImageEnv({ ocr: false });
         try {
-          const out = await exportMaskedImage(source, result.segments, env, rects);
+          const out = await exportMaskedImage(source, result.segments, env, rects, keptFaces);
           if (cancelled) return;
           shown.current = key;
           setUrl(pngUrl(out.bytes));
@@ -44,7 +45,7 @@ export function ImagePreview({ source }: { source: ImageSource }) {
     return () => {
       cancelled = true;
     };
-  }, [open, key, result, source, rects]);
+  }, [open, key, result, source, rects, keptFaces]);
 
   // 表示を差し替えたら、前の画像の URL を解放する（原文の一部を含みうるため長く残さない）
   useEffect(() => () => {

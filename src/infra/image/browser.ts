@@ -1,3 +1,4 @@
+import { openFaceDetector, type BrowserFaceDetector } from '../face-browser';
 import { ensureCanvasFont, LABEL_FONT_FAMILY, openOcr } from '../pdf/browser';
 import type { Rgba } from '../pdf/images';
 import { paintGroups } from '../pdf/raster';
@@ -15,12 +16,23 @@ const createCanvas = (w: number, h: number) => {
   return c;
 };
 
-/** ocr=false なら OCR を起こさない（保存・仕上がりの確認用） */
+/** 顔の検出器を起こす。使えない環境（読み込みの失敗など）では null を返し、顔は自動では隠さない（取込結果に表示する） */
+export async function tryOpenFaceDetector(): Promise<BrowserFaceDetector | null> {
+  try {
+    return await openFaceDetector();
+  } catch {
+    return null;
+  }
+}
+
+/** ocr=false なら OCR と顔の検出器を起こさない（保存・仕上がりの確認用） */
 export async function openImageEnv(options: { ocr?: boolean } = {}): Promise<BrowserImageEnv> {
   await ensureCanvasFont();
   const ocr = options.ocr !== false ? await openOcr() : null;
+  const faces = options.ocr !== false ? await tryOpenFaceDetector() : null;
   return {
     ocr,
+    faces,
     async decode(bytes) {
       // 向き（EXIF の Orientation）は反映し、色の変換はしない。ファイル情報は画素に移らない
       const bitmap = await createImageBitmap(new Blob([bytes as BlobPart]), { imageOrientation: 'from-image', premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
@@ -48,6 +60,7 @@ export async function openImageEnv(options: { ocr?: boolean } = {}): Promise<Bro
       return paintGroups({ createCanvas, fontFamily: LABEL_FONT_FAMILY }, image, groups);
     },
     async dispose() {
+      faces?.close();
       await ocr?.terminate();
     },
   };

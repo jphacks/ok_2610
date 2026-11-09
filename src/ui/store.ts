@@ -37,6 +37,8 @@ export type State = {
   imageRects: ImageRect[];
   /** 加工して保存した画像の指紋（復元で元の画素に戻すため）。メモリにだけ置く */
   maskedImageDigest: string | null;
+  /** 見つけた顔のうち、利用者が残すと選んだものの番号（画像・PDF の画像。Issue #11） */
+  keptFaces: number[];
   prefs: Prefs;
   ops: ManualOp[];
   /** 元に戻す単位。まとめて適用した操作は1つのまとまりとして戻す（FR-19） */
@@ -63,6 +65,7 @@ type Actions = {
   setPdfMaskedImages: (m: MaskedPdf['maskedImages']) => void;
   setImageRects: (rects: ImageRect[]) => void;
   setMaskedImageDigest: (digest: string | null) => void;
+  setKeptFaces: (kept: number[]) => void;
   setPrefs: (patch: Partial<Prefs>) => void;
   addOp: (op: ManualOp) => void;
   addOps: (ops: ManualOp[]) => void;
@@ -96,6 +99,7 @@ const initial: State = {
   pdfMaskedImages: [],
   imageRects: [],
   maskedImageDigest: null,
+  keptFaces: [],
   prefs: DEFAULT_PREFS,
   ops: [],
   groups: [],
@@ -138,14 +142,17 @@ export const useStore = create<State & Actions>((set) => ({
       pdfMaskedImages: [],
       imageRects: [],
       maskedImageDigest: null,
+      keptFaces: [],
       ...(s.destination.kind === 'file' ? { destination: { kind: 'copy' } as const } : {}),
     })),
-  importFile: (source) => set((s) => ({ ...invalidate(s), text: source.text, source, pdfRects: [], pdfMaskedImages: [], imageRects: [], maskedImageDigest: null, ops: [], groups: [], redo: [], selectedId: null })),
+  importFile: (source) => set((s) => ({ ...invalidate(s), text: source.text, source, pdfRects: [], pdfMaskedImages: [], imageRects: [], maskedImageDigest: null, keptFaces: [], ops: [], groups: [], redo: [], selectedId: null })),
   // 四角形が変われば、出力の中身が変わるので確認をやり直す
   setPdfRects: (pdfRects) => set((s) => ({ ...invalidate(s), pdfRects })),
   setPdfMaskedImages: (pdfMaskedImages) => set({ pdfMaskedImages }),
   setImageRects: (imageRects) => set((s) => ({ ...invalidate(s), imageRects })),
   setMaskedImageDigest: (maskedImageDigest) => set({ maskedImageDigest }),
+  // 顔を残すか隠すかが変われば、出力の中身が変わるので確認をやり直す
+  setKeptFaces: (keptFaces) => set((s) => ({ ...invalidate(s), keptFaces })),
   setPrefs: (patch) => set((s) => ({ ...invalidate(s), prefs: { ...s.prefs, ...patch } })),
   addOp: (op) => set((s) => ({ ...invalidate(s), ops: [...s.ops, op], groups: [...s.groups, 1], redo: [] })),
   addOps: (ops) => set((s) => (ops.length ? { ...invalidate(s), ops: [...s.ops, ...ops], groups: [...s.groups, ops.length], redo: [] } : s)),

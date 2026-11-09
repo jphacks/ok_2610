@@ -9,6 +9,7 @@ import { getActiveTab, insertToTab, requestSitePermission } from '../../infra/ta
 import { canConfirm, canOutput, destinationKey, useStore } from '../store';
 import { reportOutput } from '../usage';
 import { Icon } from './Icon';
+import { FacesPanel } from './FacesPanel';
 import { ImagePreview } from './ImagePreview';
 import { PdfPreview } from './PdfPreview';
 
@@ -78,7 +79,7 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
           const { exportMaskedPdf } = await import('../../infra/pdf/mask');
           const env = await openPdfEnv({ ocr: false });
           try {
-            const out = await exportMaskedPdf(src, result.segments, env, current.pdfRects);
+            const out = await exportMaskedPdf(src, result.segments, env, current.pdfRects, current.keptFaces);
             const latest = useStore.getState();
             if (!canOutput(latest) || latest.revision !== current.revision) return setMessage('書き出しの間に内容が変わりました。もう一度確認してください。');
             saveFile(out.bytes, out.fileName, 'application/pdf');
@@ -101,7 +102,7 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
           const { exportMaskedImage } = await import('../../infra/image/image');
           const env = await openImageEnv({ ocr: false });
           try {
-            const out = await exportMaskedImage(src, result.segments, env, current.imageRects);
+            const out = await exportMaskedImage(src, result.segments, env, current.imageRects, current.keptFaces);
             const latest = useStore.getState();
             if (!canOutput(latest) || latest.revision !== current.revision) return setMessage('書き出しの間に内容が変わりました。もう一度確認してください。');
             saveFile(out.bytes, out.fileName, 'image/png');
@@ -220,6 +221,7 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
         </div>
       )}
 
+      {(fileSource?.kind === 'image' || fileSource?.kind === 'pdf') && fileSource.faces.length > 0 && <FacesPanel source={fileSource} />}
       {fileSource?.kind === 'pdf' && pdfBlockers.length === 0 && <PdfPreview source={fileSource} />}
       {fileSource?.kind === 'image' && <ImagePreview source={fileSource} />}
       {showingOriginal && <p className="hint warn">原文を表示中です。<button type="button" className="link" onClick={onShowMasked}>加工後に戻って確認</button></p>}

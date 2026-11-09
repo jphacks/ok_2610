@@ -1,6 +1,7 @@
 import { PDFDict, PDFName, PDFNumber, PDFRawStream, PDFRef, PDFStream, type PDFDocument } from 'pdf-lib';
 import { zlibSync } from 'fflate';
 import { getName, getNumber, N } from './objects';
+import type { FaceDetector } from '../face';
 
 // PDF の中の画像を取り出して OCR にかけ、マスクした画素で差し替える（Issue #9・#11 共通の画像マスク）。
 // 画素の取り出し（デコード）と描画は環境ごとに違う（ブラウザは OffscreenCanvas、テストは Node 用キャンバス）ので、ImageEnv で受け取る。
@@ -24,6 +25,8 @@ export interface ImageEnv {
   /** 箱を背景に近い色で塗り、ラベルを書く */
   paint(image: Rgba, groups: PaintGroup[]): Promise<Rgba>;
   ocr: OcrEngine | null;
+  /** 顔の検出器（Issue #11）。null なら顔は探さない */
+  faces?: FaceDetector | null;
 }
 
 export type ImageInfo = { ref: PDFRef; width: number; height: number; imageMask: boolean };
