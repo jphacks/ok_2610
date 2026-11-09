@@ -134,7 +134,7 @@ export async function exportMaskedPdf(src: PdfSource, segments: OutputSegment[],
   src.faces.forEach((f, i) => {
     if (keptFaces.includes(i)) return;
     const groups = imageGroups.get(f.image) ?? [];
-    groups.push({ boxes: [f.box], label: faceLabel(i) });
+    groups.push({ boxes: [f.box], label: faceLabel(i), center: true });
     imageGroups.set(f.image, groups);
     faceCount++;
   });

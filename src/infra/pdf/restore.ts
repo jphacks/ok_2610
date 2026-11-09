@@ -1,8 +1,9 @@
 import fontkit from '@pdf-lib/fontkit';
 import { PDFObjectCopier, PDFRef, PDFStream, type PDFDocument } from 'pdf-lib';
 import { restoreLabels as restoreText } from '../../core/restore';
+import { faceLabel, restoreFaces, type FaceBox } from '../face';
 import { loadEditable, PdfImportError } from './document';
-import { imageInfo, ocrText, replaceImage, worthOcr, type PaintGroup } from './images';
+import { imageInfo, ocrText, replaceImage, worthOcr, type PaintGroup, type Rgba } from './images';
 import { digestBytes, embedLabelFont, splitLines, type PdfEnv } from './mask';
 import { streamBytes } from './objects';
 import { applyPieces, PdfEditError, spanWidth, type Piece, type RunGlyph } from './rewrite';
@@ -19,8 +20,15 @@ export type PdfRestoreInput = {
   bytes: Uint8Array;
   restoreMap: Record<string, string>;
   generalizedMap: Record<string, string>;
-  /** マスクしたときの土台（元の画像を取り出す）と、差し替えた画像の指紋 */
-  original?: { base: Uint8Array; maskedImages: { digest: string; objectNumber: number; generation: number }[] };
+  /**
+   * マスクしたときの土台（元の画像を取り出す）と、差し替えた画像の指紋。
+   * faces（取り込んだときに見つけた顔と、それが写っていた画像）があれば、手を加えられた画像でも「[顔N]」の所に元の顔を貼り戻す
+   */
+  original?: {
+    base: Uint8Array;
+    maskedImages: { digest: string; objectNumber: number; generation: number }[];
+    faces?: { objectNumber: number; generation: number; box: FaceBox }[];
+  };
 };
 
 export type PdfRestoreResult = { bytes: Uint8Array; fileName: string; replaced: number; images: number; unmatched: string[]; notes: string[] };
@@ -107,6 +115,7 @@ export async function restorePdf(input: PdfRestoreInput, env: PdfEnv): Promise<P
 
   // ---- 画像 ----
   let images = 0;
+  const restoredFaces = new Set<number>();
   const seen = new Set<string>();
   const refs: PDFRef[] = [];
   for (const pl of model.images) {
@@ -138,6 +147,16 @@ export async function restorePdf(input: PdfRestoreInput, env: PdfEnv): Promise<P
       const info = imageInfo(doc, ref);
       if (info && worthOcr(info)) toOcr.push(ref);
     }
+    // 顔を貼り戻すときの元の画像。同じ画像の顔が続くので、取り出した画像を使い回す
+    const faces = input.original?.faces ?? [];
+    const originals = new Map<string, Promise<Rgba | null>>();
+    const imgEnv = env.images;
+    const originalFace = (index: number) => {
+      const f = faces[index]!;
+      const key = `${f.objectNumber} ${f.generation}`;
+      if (!originals.has(key)) originals.set(key, imgEnv.decode(input.original!.base, [PDFRef.of(f.objectNumber, f.generation)]).then(([img]) => img ?? null, () => null));
+      return originals.get(key)!;
+    };
     if (toOcr.length && env.images.ocr) {
       const saved = await doc.save({ useObjectStreams: false });
       for (let i = 0; i < toOcr.length; i += 4) {
@@ -157,10 +176,13 @@ export async function restorePdf(input: PdfRestoreInput, env: PdfEnv): Promise<P
             if (!cs.length) continue;
             groups.push({ boxes: [{ x0: Math.min(...cs.map((c) => c.x0)), y0: Math.min(...cs.map((c) => c.y0)), x1: Math.max(...cs.map((c) => c.x1)), y1: Math.max(...cs.map((c) => c.y1)) }], label: hit.original });
           }
-          if (groups.length) {
-            replaceImage(doc, batch[k]!, await env.images.paint(img, groups));
+          const painted = groups.length ? await env.images.paint(img, groups) : img;
+          const back = faces.length ? await restoreFaces(painted, { text: o.text, map: o.map, chars }, faces.map((f) => f.box), originalFace) : null;
+          for (const n of back?.restored ?? []) restoredFaces.add(n);
+          if (groups.length || back?.restored.length) {
+            replaceImage(doc, batch[k]!, back ? back.image : painted);
             images++;
-            replaced += groups.length;
+            replaced += groups.length + (back?.restored.length ?? 0);
           }
         }
       }
@@ -168,6 +190,9 @@ export async function restorePdf(input: PdfRestoreInput, env: PdfEnv): Promise<P
       notes.push('画像の中のラベルは読み取れない環境のため、戻していません。');
     }
   }
+
+  if (restoredFaces.size) notes.push(`画像の中の顔 ${restoredFaces.size} 件を、ラベルの位置に元の顔を貼って戻しました。顔の位置や大きさが変わっていると、ずれることがあります。`);
+  for (const n of restoredFaces) unmatched.delete(faceLabel(n));
 
   const bytes = await doc.save({ useObjectStreams: false });
   return { bytes, fileName: restoredPdfName(input.fileName), replaced, images, unmatched: [...unmatched], notes };

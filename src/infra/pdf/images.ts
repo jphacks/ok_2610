@@ -16,8 +16,22 @@ export interface OcrEngine {
   recognize(image: Rgba): Promise<OcrLine[]>;
 }
 
-/** マスクする箇所。boxes を塗り、最初の箱に label を書く */
-export type PaintGroup = { boxes: { x0: number; y0: number; x1: number; y1: number }[]; label: string };
+/**
+ * マスクする箇所。boxes を塗り、最初の箱に label を書く。
+ * center のときは、ラベルを箱の幅に収まる大きさで真ん中に書く（顔など、縦長の箱。横につぶれず読めるようにする）
+ */
+export type PaintGroup = { boxes: { x0: number; y0: number; x1: number; y1: number }[]; label: string; center?: boolean };
+
+/** 箱を塗る範囲。文字の箱は、にじみも隠すため高さの 12% だけ広げる。画像の外には出さない */
+export function paintedRect(b: { x0: number; y0: number; x1: number; y1: number }, width: number, height: number) {
+  const pad = Math.max(1, Math.round((b.y1 - b.y0) * 0.12));
+  return {
+    x0: Math.max(0, Math.floor(b.x0 - pad)),
+    y0: Math.max(0, Math.floor(b.y0 - pad)),
+    x1: Math.min(width, Math.ceil(b.x1 + pad)),
+    y1: Math.min(height, Math.ceil(b.y1 + pad)),
+  };
+}
 
 export interface ImageEnv {
   /** PDF（バイト列）の中の画像を、そのままの画素数で RGBA にする */

@@ -1,6 +1,6 @@
 import { PDFDocument, PDFRef, PDFStream } from 'pdf-lib';
 import type { FaceDetector } from '../face';
-import type { ImageEnv, OcrEngine, PaintGroup, Rgba } from './images';
+import { paintedRect, type ImageEnv, type OcrEngine, type PaintGroup, type Rgba } from './images';
 import { getNumber, N } from './objects';
 
 // 画像の取り出し（PDF.js で描く）と塗りつぶし（キャンバス）。ブラウザとテストで同じ処理を使い、キャンバスだけ差し替える（Issue #9・#11）。
@@ -102,25 +102,26 @@ export function paintGroups(deps: Pick<RasterDeps, 'createCanvas' | 'fontFamily'
   ctx.putImageData(id, 0, 0);
   for (const g of groups) {
     g.boxes.forEach((b, i) => {
-      const h = b.y1 - b.y0;
-      const pad = Math.max(1, Math.round(h * 0.12));
-      const x0 = Math.max(0, Math.floor(b.x0 - pad));
-      const y0 = Math.max(0, Math.floor(b.y0 - pad));
-      const x1 = Math.min(image.width, Math.ceil(b.x1 + pad));
-      const y1 = Math.min(image.height, Math.ceil(b.y1 + pad));
+      const { x0, y0, x1, y1 } = paintedRect(b, image.width, image.height);
       const bg = borderColor(image, x0, y0, x1, y1);
       ctx.fillStyle = `rgb(${bg[0]},${bg[1]},${bg[2]})`;
       ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
       if (i !== 0 || !g.label) return;
       const lum = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2];
       ctx.fillStyle = lum > 140 ? 'rgb(0,0,0)' : 'rgb(255,255,255)';
-      const size = Math.max(6, (y1 - y0) * 0.8);
-      ctx.font = `${size}px "${deps.fontFamily}"`;
-      ctx.textBaseline = 'middle';
-      const width = ctx.measureText(g.label).width;
       const room = x1 - x0;
+      let size = Math.max(6, (y1 - y0) * 0.8);
+      ctx.textBaseline = 'middle';
+      if (g.center) {
+        // 箱の幅の 9 割に収まる大きさにする（縦長の箱で、横につぶれた読めない文字にしない）
+        ctx.font = `100px "${deps.fontFamily}"`;
+        const at100 = ctx.measureText(g.label).width;
+        if (at100 > 0) size = Math.max(6, Math.min(size, (100 * room * 0.9) / at100));
+      }
+      ctx.font = `${size}px "${deps.fontFamily}"`;
+      const width = ctx.measureText(g.label).width;
       ctx.save();
-      ctx.translate(x0, (y0 + y1) / 2);
+      ctx.translate(g.center && width < room ? x0 + (room - width) / 2 : x0, (y0 + y1) / 2);
       if (width > room && width > 0) ctx.scale(room / width, 1);
       ctx.fillText(g.label, 0, 0);
       ctx.restore();
