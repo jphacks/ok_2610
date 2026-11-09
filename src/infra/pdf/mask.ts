@@ -3,6 +3,7 @@ import { PDFDict, PDFRef, PDFStream, type PDFDocument, type PDFFont } from 'pdf-
 import type { OutputSegment } from '../../core/model/types';
 import { imgRef, loadEditable, MAX_PAGES, type PdfSource } from './document';
 import type { FontInfo } from './fonts';
+import { faceLabel } from '../face';
 import { replaceImage, type ImageEnv, type PaintGroup, type Rgba } from './images';
 import { latin1 } from './lexer';
 import { getDict, N, resolve, streamBytes } from './objects';
@@ -77,7 +78,8 @@ export function splitLines(model: TextModel, indices: number[]): number[][] {
   return out;
 }
 
-export async function exportMaskedPdf(src: PdfSource, segments: OutputSegment[], env: PdfEnv, rects: PdfRect[] = []): Promise<MaskedPdf> {
+/** keptFaces は、見つけた顔（src.faces）のうち利用者が残すと選んだものの番号。それ以外の顔は塗りつぶす */
+export async function exportMaskedPdf(src: PdfSource, segments: OutputSegment[], env: PdfEnv, rects: PdfRect[] = [], keptFaces: number[] = []): Promise<MaskedPdf> {
   const text = segments.map((s) => (s.kind === 'changed' ? s.original : s.text)).join('');
   if (text !== src.text) throw new PdfExportError('読み込んだ PDF と本文が一致しないため、PDF としては保存できません。');
   if (src.blockers.length) throw new PdfExportError(src.blockers.join('\n'));
@@ -126,6 +128,17 @@ export async function exportMaskedPdf(src: PdfSource, segments: OutputSegment[],
       }
     }
   }
+
+  // ---- 顔: 残すと選んだもの以外を塗る ----
+  let faceCount = 0;
+  src.faces.forEach((f, i) => {
+    if (keptFaces.includes(i)) return;
+    const groups = imageGroups.get(f.image) ?? [];
+    groups.push({ boxes: [f.box], label: faceLabel(i) });
+    imageGroups.set(f.image, groups);
+    faceCount++;
+  });
+  if (faceCount) notes.push(`画像の中の顔 ${faceCount} 件を塗りつぶしました。`);
 
   // ---- 手動の四角形: 重なる画像の、その範囲の画素を塗る ----
   let rectMiss = 0;

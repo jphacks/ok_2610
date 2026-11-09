@@ -1,4 +1,5 @@
 import { assetUrl, readBundledAsset } from '../assets';
+import { openFaceDetector } from '../face-browser';
 import { tesseractOcr } from '../ocr';
 import type { PdfEnv } from './mask';
 import { makeImageEnv } from './raster';
@@ -54,6 +55,8 @@ export async function openPdfEnv(options: { ocr?: boolean } = {}): Promise<Brows
   const worker = new pdfjs.PDFWorker({ port: port as unknown as null });
   await ensureCanvasFont();
   const ocr = options.ocr !== false ? await openOcr() : null;
+  // 顔の検出器は読み込むときだけ使う。使えない環境では顔を探さない（取込結果に表示する）
+  const faces = options.ocr !== false ? await openFaceDetector().catch(() => null) : null;
   const images = makeImageEnv({
     pdfjs,
     createCanvas: (w, h) => {
@@ -65,11 +68,13 @@ export async function openPdfEnv(options: { ocr?: boolean } = {}): Promise<Brows
     documentOptions: () => ({ worker, cMapUrl: asset('pdf-cmaps/'), cMapPacked: true, wasmUrl: asset('pdf-wasm/'), disableFontFace: false }),
     fontFamily: LABEL_FONT_FAMILY,
     ocr,
+    faces,
   });
   return {
     labelFont: loadFontBytes,
     images,
     async dispose() {
+      faces?.close();
       await ocr?.terminate();
       worker.destroy();
       port.terminate();

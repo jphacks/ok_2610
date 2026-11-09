@@ -11,11 +11,12 @@ export function PdfPreview({ source }: { source: PdfSource }) {
   const result = useStore((s) => s.result);
   const rects = useStore((s) => s.pdfRects);
   const setPdfRects = useStore((s) => s.setPdfRects);
+  const keptFaces = useStore((s) => s.keptFaces);
   const [pages, setPages] = useState<Awaited<ReturnType<typeof import('../../infra/pdf/browser').renderPdfPages>> | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const key = `${result?.contentId ?? ''}|${result?.masked.length ?? 0}|${JSON.stringify(rects)}`;
+  const key = `${result?.contentId ?? ''}|${result?.masked.length ?? 0}|${JSON.stringify(rects)}|${keptFaces.join(',')}`;
   const shown = useRef<string | null>(null);
 
   useEffect(() => {
@@ -29,7 +30,7 @@ export function PdfPreview({ source }: { source: PdfSource }) {
         const { exportMaskedPdf } = await import('../../infra/pdf/mask');
         const env = await openPdfEnv({ ocr: false });
         try {
-          const out = await exportMaskedPdf(source, result.segments, env, rects);
+          const out = await exportMaskedPdf(source, result.segments, env, rects, keptFaces);
           const rendered = await renderPdfPages(out.bytes, 360, 30);
           if (cancelled) return;
           shown.current = key;
@@ -47,7 +48,7 @@ export function PdfPreview({ source }: { source: PdfSource }) {
     return () => {
       cancelled = true;
     };
-  }, [open, key, result, source, rects]);
+  }, [open, key, result, source, rects, keptFaces]);
 
   return (
     <details className="pdf-preview" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>

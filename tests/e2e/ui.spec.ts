@@ -172,6 +172,8 @@ test('画像を読み込むと、中の文字が OCR で検査され、塗りつ
   await page.getByLabel('読み込む Excel・CSV・PDF・画像ファイル').setInputFiles({ name: '名刺.png', mimeType: 'image/png', buffer: png });
   const notes = page.getByRole('list', { name: 'ファイルの取込結果' });
   await expect(notes).toContainText('「名刺.png」', { timeout: 90_000 });
+  // 顔の検出器（同梱の MediaPipe）が拡張の中で動く。顔のない画像なので「見つかりませんでした」になる
+  await expect(notes).toContainText('顔は見つかりませんでした');
   await expect(page.getByLabel('読み込んだファイル')).toContainText('名刺.png');
   await expect(page.getByLabel('加工後の文章')).not.toContainText('090-1234-5678', { timeout: 90_000 });
 

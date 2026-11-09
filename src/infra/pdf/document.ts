@@ -1,4 +1,5 @@
 import { EncryptedPDFError, PDFDocument, PDFRef } from 'pdf-lib';
+import { faceNotes, type FaceBox } from '../face';
 import { imageInfo, ocrText, worthOcr, type ImageEnv, type OcrChar } from './images';
 import { flattenAnnotations } from './sanitize';
 import { buildTextModel, pageText, type TextModel } from './textmodel';
@@ -29,6 +30,8 @@ export type PdfSource = {
   charMap: Int32Array;
   ocrChars: (OcrChar & { image: number })[];
   images: PdfImageEntry[];
+  /** 画像の中に見つけた顔（Issue #11）。image は images の番号、box は画像の画素 */
+  faces: { image: number; box: FaceBox }[];
   pageCount: number;
   /** PDF として保存できない理由。空なら保存できる */
   blockers: string[];
@@ -76,6 +79,7 @@ export async function importPdf(fileName: string, bytes: Uint8Array, env: ImageE
   }
   const targets = images.filter((i) => i.ocr);
   const ocrResults = new Map<number, Awaited<ReturnType<NonNullable<ImageEnv['ocr']>['recognize']>>>();
+  const faces: PdfSource['faces'] = [];
   if (targets.length) {
     if (!env?.ocr) blockers.push('画像の中の文字を読み取れない環境のため、画像を含む PDF は PDF としては保存できません。');
     else if (targets.length > MAX_OCR_IMAGES) blockers.push(`画像が多すぎます（${targets.length} 枚、上限 ${MAX_OCR_IMAGES} 枚）。画像の文字を検査しきれないため、PDF としては保存できません。`);
@@ -94,6 +98,7 @@ export async function importPdf(fileName: string, bytes: Uint8Array, env: ImageE
             continue;
           }
           ocrResults.set(images.indexOf(entry), await env.ocr.recognize(img));
+          if (env.faces) for (const box of await env.faces.detect(img)) faces.push({ image: images.indexOf(entry), box });
           onProgress?.(++done, targets.length);
         }
       }
@@ -144,7 +149,8 @@ export async function importPdf(fileName: string, bytes: Uint8Array, env: ImageE
   }
   if (unknown) notes.push(`文字の対応が分からない記号が ${unknown} 個あり、検査していません（箇条書きの記号などのことが多いです）。`);
   if (emptyPages) notes.push(`文字の見つからないページが ${emptyPages} ページあります。`);
-  return { kind: 'pdf', fileName, base, text, charMap: Int32Array.from(map), ocrChars, images, pageCount: doc.getPageCount(), blockers: [...new Set(blockers)], notes };
+  if (targets.length && env?.ocr && targets.length <= MAX_OCR_IMAGES) notes.push(...faceNotes(faces, !!env.faces));
+  return { kind: 'pdf', fileName, base, text, charMap: Int32Array.from(map), ocrChars, images, faces, pageCount: doc.getPageCount(), blockers: [...new Set(blockers)], notes };
 }
 
 export type { TextModel };

@@ -110,7 +110,7 @@ export function InputPanel() {
         const src = await importImage(file.name, new Uint8Array(await file.arrayBuffer()), env);
         if (useStore.getState().sessionId !== sessionId) return;
         importFile(src);
-        setFileNotes([`「${file.name}」（${src.width}×${src.height}）の中の文字を取り込みました。`, ...src.notes]);
+        setFileNotes([`「${file.name}」（${src.width}×${src.height}）を取り込みました。`, ...src.notes]);
       } finally {
         await env.dispose();
       }
@@ -168,7 +168,7 @@ export function InputPanel() {
               {fileSource.kind === 'pdf'
                 ? 'ページの文字と画像の中の文字を検査しています。PDF の形のまま保存できます。'
                 : fileSource.kind === 'image'
-                  ? '画像の中の文字を OCR で読んで検査しています。隠す語を塗りつぶした画像として保存できます。'
+                  ? '画像の中の文字と顔を端末内で探しています。隠す語と顔を塗りつぶした画像として保存できます。'
                   : 'セルの内容を検査しています。結果は下の表で確認できます。'}
             </p>
           </div>

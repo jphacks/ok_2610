@@ -1,4 +1,5 @@
 import { PDFDocument, PDFRef, PDFStream } from 'pdf-lib';
+import type { FaceDetector } from '../face';
 import type { ImageEnv, OcrEngine, PaintGroup, Rgba } from './images';
 import { getNumber, N } from './objects';
 
@@ -31,6 +32,8 @@ export type RasterDeps = {
   /** ラベルを描くフォントの family 名（事前に登録しておく） */
   fontFamily: string;
   ocr: OcrEngine | null;
+  /** 顔の検出器（Issue #11）。省略時は顔を探さない */
+  faces?: FaceDetector | null;
 };
 
 /** 描くときに大きすぎる画像は縮めずに断る（キャンバスの上限） */
@@ -39,6 +42,7 @@ const MAX_PIXELS = 40_000_000;
 export function makeImageEnv(deps: RasterDeps): ImageEnv {
   return {
     ocr: deps.ocr,
+    faces: deps.faces ?? null,
     async decode(pdf, refs) {
       if (!refs.length) return [];
       // 画像1枚ずつを、画像の画素数と同じ大きさのページに描いた PDF を作り、PDF.js で描く
