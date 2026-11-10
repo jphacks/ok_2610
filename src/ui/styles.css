@@ -1,64 +1,67 @@
 /*
  * 配色は「墨と藍」。書類に朱を入れるのではなく、藍の判で置き換えた箇所を示す。
- * 紙（bg）・用紙（surface）・墨（text）・藍（accent・自動で加工）・緑青（手動で直した箇所）・黄檗（残した候補）・朱（止める操作）。
+ * 紙・用紙・罫まで藍に寄せて染め、差し色の藍と同じ色相にそろえる（緑に寄った灰色は暗い画面で濁って見える）。
+ * 印の色は安全色（JIS Z 9103）の意味に合わせ、赤と緑の組み合わせを避けて青と黄を軸にする。
+ * 藍＝自動で加工・黄檗＝残した候補（注意）・朱＝秘密の値や止める操作（禁止）・墨＝手動で塗った箇所（無彩色なので色覚によらず明るさで分かる）。
+ * 色だけに頼らず、線の形（実線・点線・二重線）でも区別する。
  */
 :root {
-  --bg: #eef1f0;
-  --surface: #fafbfa;
-  --surface-subtle: #f3f5f4;
-  --text: #1d2422;
-  --muted: #5d6965;
-  --border: #d9dfdc;
-  --border-strong: #b7c1bd;
-  --accent: #24497a;
-  --accent-text: #f4f7fb;
-  --accent-soft: #e2e9f3;
+  --bg: #e6ebf4;
+  --surface: #f8f9fd;
+  --surface-subtle: #eff2f9;
+  --text: #1a2233;
+  --muted: #566179;
+  --border: #d3dae8;
+  --border-strong: #aeb8cc;
+  --accent: #23467f;
+  --accent-text: #f4f7fc;
+  --accent-soft: #dde5f4;
   --ok: #2c6a4e;
   --ok-soft: #e3f0e8;
   --warn: #7f5a0c;
   --warn-soft: #f6eedb;
   --danger: #a8372a;
   --danger-soft: #f8e9e6;
-  --changed: #dfe7f3;
-  --changed-text: #1b3a63;
-  --changed-border: #24497a;
-  --kept: #f4e9c2;
+  --changed: #d7e1f3;
+  --changed-text: #1b3a66;
+  --changed-border: #23467f;
+  --kept: #f3e6bd;
   --kept-border: #9c7a12;
-  --manual: #dcefe8;
-  --manual-text: #1d5145;
-  --manual-border: #2f7564;
-  --focus: #24497a;
+  --manual: #2b2b2b;
+  --manual-text: #f5f5f5;
+  --manual-border: #8c8c8c;
+  --focus: #23467f;
   --radius: 12px;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #131716;
-    --surface: #1b201f;
-    --surface-subtle: #171b1a;
-    --text: #e2e7e5;
-    --muted: #9aa6a1;
-    --border: #2c3432;
-    --border-strong: #46504d;
-    --accent: #9fb7e2;
-    --accent-text: #0f1f38;
-    --accent-soft: #212d40;
+    --bg: #0f131c;
+    --surface: #171d2a;
+    --surface-subtle: #131825;
+    --text: #e2e7f1;
+    --muted: #949fb7;
+    --border: #273047;
+    --border-strong: #3f4a63;
+    --accent: #a7bde8;
+    --accent-text: #0e1c36;
+    --accent-soft: #1f2a42;
     --ok: #8fcfaf;
     --ok-soft: #1c3229;
     --warn: #e2c27c;
     --warn-soft: #332b1a;
     --danger: #f0a094;
     --danger-soft: #3a2420;
-    --changed: #23314a;
-    --changed-text: #c9d7f1;
-    --changed-border: #8aa6d8;
+    --changed: #22304c;
+    --changed-text: #c9d7f2;
+    --changed-border: #8aa6dc;
     --kept: #383120;
     --kept-border: #cdb25c;
-    --manual: #1d3732;
-    --manual-text: #c3e6dc;
-    --manual-border: #7cc3b1;
-    --focus: #9fb7e2;
+    --manual: #d9d9d9;
+    --manual-text: #161616;
+    --manual-border: #707070;
+    --focus: #a7bde8;
     color-scheme: dark;
   }
 }
@@ -232,7 +235,7 @@ button.link { min-height: auto; padding: 0 4px; color: var(--accent); background
 /* 置き換えた箇所は藍の判のように濃く示す。画面でいちばん目立たせる要素なので、ほかの装飾は控えめにする。 */
 .mark.changed { background: var(--changed); border-color: var(--changed-border); color: var(--changed-text); font-weight: 600; }
 .mark.kept { background: var(--kept); border-color: var(--kept-border); border-bottom-style: dashed; }
-/* 手動で直した箇所は、自動の藍と見分けられるよう緑青にし、二重線も付ける（色だけに頼らない） */
+/* 手動で直した箇所は、自動の藍と見分けられるよう墨（無彩色）にし、二重線も付ける（色だけに頼らない） */
 .mark.manual { background: var(--manual); color: var(--manual-text); border-color: var(--manual-border); border-bottom-style: double; border-bottom-width: 3px; }
 /* 秘密の値（API キーなど）は残せないので、朱で別扱いにする */
 .mark.secret { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
@@ -365,8 +368,8 @@ button.utility-link { border: none; background: transparent; padding: 4px 0; col
 /* 取り消せない操作は朱で示し、押す前に確認を挟む。 */
 button.danger { background: var(--danger); color: var(--surface); border-color: var(--danger); font-weight: 600; }
 button.danger:hover:not(:disabled) { background: var(--danger); border-color: var(--danger); filter: brightness(.94); }
-.confirm-dialog { width: min(360px, calc(100% - 32px)); border: 1px solid var(--border); border-radius: 14px; padding: 20px; background: var(--surface); color: var(--text); box-shadow: 0 16px 48px rgb(10 16 14 / 24%); }
-.confirm-dialog::backdrop { background: rgb(10 16 14 / 40%); }
+.confirm-dialog { width: min(360px, calc(100% - 32px)); border: 1px solid var(--border); border-radius: 14px; padding: 20px; background: var(--surface); color: var(--text); box-shadow: 0 16px 48px rgb(10 14 26 / 24%); }
+.confirm-dialog::backdrop { background: rgb(10 14 26 / 40%); }
 .confirm-dialog h2 { font-size: 15px; margin-bottom: 8px; }
 .confirm-dialog p { font-size: 13px; color: var(--muted); margin: 0 0 20px; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
