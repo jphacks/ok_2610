@@ -9,6 +9,8 @@ import { getActiveTab, insertToTab, requestSitePermission } from '../../infra/ta
 import { canConfirm, canOutput, destinationKey, useStore } from '../store';
 import { reportOutput } from '../usage';
 import { Icon } from './Icon';
+import { FacesPanel } from './FacesPanel';
+import { ImagePreview } from './ImagePreview';
 import { PdfPreview } from './PdfPreview';
 
 const NEWLINE = String.fromCharCode(10);
@@ -26,8 +28,15 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
   const blocked = !canConfirm(state);
   const fileSource = source && result.text === source.text ? source : null;
   const isPdf = fileSource?.kind === 'pdf';
+  const isImage = fileSource?.kind === 'image';
   const pdfBlockers = fileSource?.kind === 'pdf' ? fileSource.blockers : [];
-  const fileLabel = !fileSource ? '' : isPdf ? 'PDF のまま保存（レイアウトを保つ）' : `元と同じ形式（.${fileSource.fileName.split('.').pop()?.toLowerCase()}）で保存`;
+  const fileLabel = !fileSource
+    ? ''
+    : isPdf
+      ? 'PDF のまま保存（レイアウトを保つ）'
+      : isImage
+        ? '画像として保存（隠す語を塗りつぶす・PNG）'
+        : `元と同じ形式（.${fileSource.fileName.split('.').pop()?.toLowerCase()}）で保存`;
 
   async function chooseInsert() {
     const sessionId = useStore.getState().sessionId;
@@ -70,7 +79,7 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
           const { exportMaskedPdf } = await import('../../infra/pdf/mask');
           const env = await openPdfEnv({ ocr: false });
           try {
-            const out = await exportMaskedPdf(src, result.segments, env, current.pdfRects);
+            const out = await exportMaskedPdf(src, result.segments, env, current.pdfRects, current.keptFaces);
             const latest = useStore.getState();
             if (!canOutput(latest) || latest.revision !== current.revision) return setMessage('書き出しの間に内容が変わりました。もう一度確認してください。');
             saveFile(out.bytes, out.fileName, 'application/pdf');
@@ -83,6 +92,30 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
         } catch (e) {
           setMessage(e instanceof Error && e.message ? e.message : 'PDF を書き出せませんでした。コピーをお使いください。');
           log('output', { pdf: false });
+        }
+        return;
+      }
+      if (src.kind === 'image') {
+        setMessage('画像を書き出しています…');
+        try {
+          const { openImageEnv } = await import('../../infra/image/browser');
+          const { exportMaskedImage } = await import('../../infra/image/image');
+          const env = await openImageEnv({ ocr: false });
+          try {
+            const out = await exportMaskedImage(src, result.segments, env, current.imageRects, current.keptFaces);
+            const latest = useStore.getState();
+            if (!canOutput(latest) || latest.revision !== current.revision) return setMessage('書き出しの間に内容が変わりました。もう一度確認してください。');
+            saveFile(out.bytes, out.fileName, 'image/png');
+            latest.setMaskedImageDigest(out.digest);
+            setMessage([`加工した画像を「${out.fileName}」として保存しました。保存先の扱いにご注意ください。`, ...out.notes].join(NEWLINE));
+            log('output', { image: true });
+            reportOutput();
+          } finally {
+            await env.dispose();
+          }
+        } catch (e) {
+          setMessage(e instanceof Error && e.name === 'ImageExportError' ? e.message : '画像を書き出せませんでした。コピーをお使いください。');
+          log('output', { image: false });
         }
         return;
       }
@@ -149,7 +182,12 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
               隠す語は、同じ場所で「人物A」などのラベルに置き換え、ほかの文字の位置は変えません。画像の中の語は塗りつぶしてラベルを書きます。作成者などのファイル情報・しおり・注釈・フォームは取り除きます。保存したラベル入りの PDF は「AIの回答を復元」で元に戻せます。
             </p>
           )}
-          {destination.kind === 'file' && fileSource && !isPdf && (
+          {destination.kind === 'file' && isImage && (
+            <p className="hint">
+              画像の中の隠す語を、周りの色で塗りつぶして「人物A」などのラベルを書きます。撮影日時・位置などのファイル情報は含めず、PNG で保存します。保存したラベル入りの画像は「AIの回答を復元」で元に戻せます。
+            </p>
+          )}
+          {destination.kind === 'file' && fileSource && !isPdf && !isImage && (
             <p className="hint">
               加工した値のセルだけを書き換え、書式・列幅・シート構成は元のまま残します。画像・コメント・グラフ・作成者などの情報は検査していないため取り除きます。
             </p>
@@ -183,7 +221,9 @@ export function OutputPanel({ onConditions, showingOriginal, onShowMasked }: { o
         </div>
       )}
 
+      {(fileSource?.kind === 'image' || fileSource?.kind === 'pdf') && fileSource.faces.length > 0 && <FacesPanel source={fileSource} />}
       {fileSource?.kind === 'pdf' && pdfBlockers.length === 0 && <PdfPreview source={fileSource} />}
+      {fileSource?.kind === 'image' && <ImagePreview source={fileSource} />}
       {showingOriginal && <p className="hint warn">原文を表示中です。<button type="button" className="link" onClick={onShowMasked}>加工後に戻って確認</button></p>}
       <div className="output-actions">
         <button type="button" className="primary" aria-label={destination.kind === 'copy' ? MESSAGES.outputCopy : destination.kind === 'file' ? MESSAGES.outputFile : MESSAGES.outputInsert} disabled={blocked || showingOriginal} onClick={() => void onOutput()}>

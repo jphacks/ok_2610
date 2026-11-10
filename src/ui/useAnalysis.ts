@@ -19,8 +19,8 @@ export function useAnalysis() {
   const ops = useStore((s) => s.ops);
   const answers = useStore((s) => s.answers);
   const revision = useStore((s) => s.revision);
-  // PDF をそのままの形で加工するときは、元に戻せるよう隠す語をすべてラベルにする（Issue #9）
-  const labelsOnly = useStore((s) => s.source?.kind === 'pdf' && s.source.text === s.text);
+  // PDF・画像をそのままの形で加工するときは、元に戻せるよう隠す語をすべてラベルにする（Issue #9・#11）
+  const labelsOnly = useStore((s) => (s.source?.kind === 'pdf' || s.source?.kind === 'image') && s.source.text === s.text);
   const loaded = useRef(false);
 
   // 起動時: 設定・エンジンの状態・右クリックの受け渡しを読む

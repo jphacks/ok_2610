@@ -47,6 +47,7 @@
 | フォントの埋め込み | @pdf-lib/fontkit・@pdf-lib/standard-fonts | 1.1.1・1.0.0 | pdf-lib で TrueType を部分埋め込みする。標準 14 フォントの文字幅に standard-fonts を使う | Issue #9 |
 | ラベル・元の語のフォント | BIZ UDPゴシック（@expo-google-fonts/biz-udpgothic） | 0.4.2 | SIL Open Font License。静的な TrueType で JIS 第1〜第4水準を含み、プロポーショナル。拡張に同梱する | Issue #9 |
 | 画像の文字の読み取り（OCR） | tesseract.js・tesseract.js-core・@tesseract.js-data/jpn | 7.0.0・7.0.0・1.0.0（4.0.0_best_int） | Apache-2.0。端末内で動き、文字1つずつの位置（symbols）まで取れるので、塗りつぶす箱を正確に決められる。Worker・本体・日本語データは拡張に同梱し、CDN からは取らない（workerBlobURL も使わない） | Issue #9・#11 |
+| 画像の中の顔の検出 | @mediapipe/tasks-vision（BlazeFace short range） | 1.1.1（モデルは float16 version 1） | Apache-2.0。端末内で動き、モデルが約 225KB と小さい。WASM（SIMD 版）とモデル（`vendor/mediapipe`）は拡張に同梱する。使い方の統計を Google へ送る処理はビルド時に止める（`wxt.config.ts`）。Chrome の FaceDetector（Shape Detection API）は試験的な扱いで使えない環境があるため使わない | Issue #11 |
 | テスト用のキャンバス | @napi-rs/canvas（開発用） | 1.1.0 | Node 上で PDF.js の描画と画像の塗りつぶしを、ブラウザと同じ処理で試す | Issue #9 |
 
 ---

@@ -77,3 +77,13 @@ describe('日付の役割（FR-06, AT-03）', () => {
     expect(classifyDateRole(t, 4, 8)).toMatchObject({ role: 'unknownDate', certainty: '要確認' });
   });
 });
+
+describe('年齢は改行をまたがない', () => {
+  test('表の別の欄の数字と「才」を年齢にしない', async () => {
+    const { run } = await import('./helpers');
+    const r = await run('2026\n4\n才\n満 22 才');
+    const ages = r.candidates.filter((c) => c.categories.includes('age')).map((c) => c.text);
+    expect(ages).not.toContain('4\n才');
+    expect(ages).toContain('22 才');
+  });
+});

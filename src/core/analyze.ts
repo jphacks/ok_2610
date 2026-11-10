@@ -2,6 +2,7 @@ import { classifyDateRole, isInExample } from './context/roles';
 import { makeLabelAllocator, resolveEntities } from './context/entities';
 import { detectPatterns, detectTerms } from './detect/dictionary';
 import { mergeSpans, type MergedSpan } from './detect/merge';
+import { linkReadings, readingSpans } from './detect/furigana';
 import { propagateMentions } from './detect/propagate';
 import { detectRules, RULE_ENGINE_VERSION } from './detect/rules';
 import { explain } from './explain/explain';
@@ -243,12 +244,15 @@ export async function analyze(input: AnalyzeInput): Promise<AnalysisResult> {
   const opIssues: OpIssue[] = [];
   const firstPass = mergeSpans(spans, scope.length);
   const propagated = propagateMentions(firstPass, scope);
-  const autoMerged = propagated.length > 0 ? mergeSpans([...spans, ...propagated], scope.length) : firstPass;
+  const propagatedMerged = propagated.length > 0 ? mergeSpans([...spans, ...propagated], scope.length) : firstPass;
+  // 検出した氏名に付いた読み仮名（括弧・すぐ上の行）
+  const readings = readingSpans(propagatedMerged, scope);
+  const autoMerged = readings.length > 0 ? mergeSpans([...spans, ...propagated, ...readings], scope.length) : propagatedMerged;
   const merged = applyStructuralOps(autoMerged, ops, scope, opIssues);
   const bases = buildBase(merged, text, nanoRoles);
 
   const allocate = makeLabelAllocator(text);
-  const { entities, entityOf, ambiguous } = resolveEntities(bases, ops, allocate);
+  const { entities, entityOf, ambiguous } = resolveEntities(bases, ops, allocate, linkReadings(bases, scope));
 
   const current = decideAll(bases, stage, input, entityOf);
   opIssues.push(...current.issues);

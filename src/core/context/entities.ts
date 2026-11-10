@@ -42,6 +42,8 @@ export function resolveEntities(
   mentions: Mention[],
   ops: ManualOp[],
   allocate: ReturnType<typeof makeLabelAllocator>,
+  /** 読み仮名の id → 対応する氏名の id。同じ人物にまとめる（手動の統合と違い、利用者の確認済みにはしない） */
+  links: Map<string, string> = new Map(),
 ): { entities: Entity[]; entityOf: Map<string, string>; ambiguous: Set<string> } {
   const groups = new Map<string, { kind: EntityKind; prefix: string; keys: Set<string>; mentions: Mention[] }>();
   const ambiguous = new Set<string>();
@@ -84,6 +86,18 @@ export function resolveEntities(
     }
   }
 
+  // 読み仮名を氏名の人物へ寄せる（「やまだ たろう」と「山田 太郎」を同じ人物Aにする）
+  for (const [fromId, intoId] of links) {
+    const from = [...groups.entries()].find(([, g]) => g.mentions.some((m) => m.id === fromId));
+    const into = [...groups.entries()].find(([, g]) => g.mentions.some((m) => m.id === intoId));
+    if (!from || !into || from[0] === into[0]) continue;
+    // 読みの表記で、ほかの人物の読みと混ざらないよう、読みだけのまとまりのときに限る
+    if (from[1].mentions.some((m) => /\p{Script=Han}/u.test(m.text))) continue;
+    into[1].mentions.push(...from[1].mentions);
+    for (const k of from[1].keys) into[1].keys.add(k);
+    groups.delete(from[0]);
+  }
+
   // 手動の統合（from の表記を into の対象へ寄せる）
   for (const op of ops) {
     if (op.kind !== 'mergeEntity') continue;
@@ -104,7 +118,9 @@ export function resolveEntities(
   const entityOf = new Map<string, string>();
   ordered.forEach((g, i) => {
     const id = `e${i}`;
-    const canonical = [...g.mentions].sort((a, b) => b.text.length - a.text.length)[0]?.text ?? '';
+    // 読み仮名がまとまっているときも、代表の表記は漢字の氏名にする（復元で読みに戻さない）
+    const kanjiFirst = (m: Mention) => (/\p{Script=Han}/u.test(m.text) ? 0 : 1);
+    const canonical = [...g.mentions].sort((a, b) => kanjiFirst(a) - kanjiFirst(b) || b.text.length - a.text.length)[0]?.text ?? '';
     entities.push({
       id,
       kind: g.kind,

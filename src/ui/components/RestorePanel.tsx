@@ -6,6 +6,7 @@ import { workerClient } from '../../infra/analysis-session';
 import { ACCEPTED_EXTENSIONS, readSpreadsheetFile, SpreadsheetError } from '../../infra/spreadsheet';
 import { restoreSpreadsheet, type SpreadsheetRestore } from '../../infra/spreadsheet-restore';
 import { PDF_EXTENSION } from '../../infra/pdf';
+import { IMAGE_EXTENSIONS, isImageFile } from '../../infra/image/image';
 import { log } from '../../infra/logger';
 import { useStore } from '../store';
 import { Icon } from './Icon';
@@ -19,8 +20,12 @@ export function RestorePanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [restoredFile, setRestoredFile] = useState<SpreadsheetRestore | null>(null);
   const [fileMessage, setFileMessage] = useState<string | null>(null);
+  // 文字のラベルがなくても、画像・PDF の顔や、保存した塗りつぶし済みの画像はファイルから戻せる（顔写真だけの画像など）
+  const fileOnly = useStore((s) => (s.source?.kind === 'image' || s.source?.kind === 'pdf') && (s.source.faces.length > 0 || s.maskedImageDigest !== null || s.pdfMaskedImages.length > 0));
   const fileInput = useRef<HTMLInputElement>(null);
-  if (!result || (Object.keys(result.restoreMap).length === 0 && Object.keys(result.generalizedMap).length === 0)) return null;
+  if (!result) return null;
+  const hasLabels = Object.keys(result.restoreMap).length > 0 || Object.keys(result.generalizedMap).length > 0;
+  if (!hasLabels && !fileOnly) return null;
 
   async function restore() {
     const before = useStore.getState();
@@ -59,7 +64,15 @@ export function RestorePanel() {
               bytes: new Uint8Array(await file.arrayBuffer()),
               restoreMap: before.result.restoreMap,
               generalizedMap: before.result.generalizedMap,
-              ...(src ? { original: { base: src.base, maskedImages: useStore.getState().pdfMaskedImages } } : {}),
+              ...(src
+                ? {
+                    original: {
+                      base: src.base,
+                      maskedImages: useStore.getState().pdfMaskedImages,
+                      faces: src.faces.map((f) => ({ objectNumber: src.images[f.image]!.objectNumber, generation: src.images[f.image]!.generation, box: f.box })),
+                    },
+                  }
+                : {}),
             },
             env,
           );
@@ -81,13 +94,49 @@ export function RestorePanel() {
         }
         return;
       }
+      if (isImageFile(file.name)) {
+        // 画像は、このパネルで加工した画像なら元の画素に戻し、それ以外は OCR でラベルを探して元の語を描く（Issue #11）
+        setFileMessage('画像を元に戻しています…');
+        const { openImageEnv } = await import('../../infra/image/browser');
+        const { restoreImage } = await import('../../infra/image/image');
+        const env = await openImageEnv();
+        try {
+          const src = before.source?.kind === 'image' ? before.source : null;
+          const value = await restoreImage(
+            {
+              fileName: file.name,
+              bytes: new Uint8Array(await file.arrayBuffer()),
+              restoreMap: before.result.restoreMap,
+              generalizedMap: before.result.generalizedMap,
+              ...(src ? { original: { base: src.base, digest: useStore.getState().maskedImageDigest, faces: src.faces } } : {}),
+            },
+            env,
+          );
+          if (useStore.getState().revision !== before.revision) return;
+          setFileMessage(null);
+          setRestoredFile({
+            bytes: value.bytes,
+            fileName: value.fileName,
+            mimeType: 'image/png',
+            cellCount: value.replaced + value.images,
+            replacedCount: value.replaced,
+            generalized: [],
+            unmatched: value.unmatched,
+            notes: value.notes,
+          });
+          log('restore', { image: true, replaced: value.replaced });
+        } finally {
+          await env.dispose();
+        }
+        return;
+      }
       const { source } = await readSpreadsheetFile(file);
       const value = restoreSpreadsheet(source, before.result.restoreMap, before.result.generalizedMap);
       if (useStore.getState().revision !== before.revision) return;
       setRestoredFile(value);
       log('restore', { file: true, cells: value.cellCount });
     } catch (e) {
-      if (useStore.getState().revision === before.revision) setFileMessage(e instanceof SpreadsheetError || (e instanceof Error && e.name === 'PdfRestoreError') ? (e as Error).message : 'ファイルを復元できませんでした。');
+      if (useStore.getState().revision === before.revision) setFileMessage(e instanceof SpreadsheetError || (e instanceof Error && (e.name === 'PdfRestoreError' || e.name === 'ImageRestoreError')) ? (e as Error).message : 'ファイルを復元できませんでした。');
     } finally {
       if (fileInput.current) fileInput.current.value = '';
     }
@@ -100,39 +149,47 @@ export function RestorePanel() {
           <h2 id="restore-title">AIの回答を復元</h2>
           <span className="chip chip-muted">任意</span>
         </summary>
-        <p className="hint">「人物A」などのラベルや、「30代」などに一般化した語を元の語に戻します。加工後の文章のほかの所にも同じ語がある一般化と、削除した情報は戻せません。</p>
-        <textarea rows={5} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="AIの回答を貼り付け" aria-label="AIの回答" />
-        <button
-          type="button"
-          disabled={!answer.trim() || !current}
-          onClick={() => void restore()}
-        >
-          ラベルを元の語に戻す
-        </button>
-        {restored && (
+        {hasLabels && (
           <>
-            <div className="output-preview" aria-label="元に戻した文章">
-              {restored.restored}
-            </div>
-            <p className="hint">{restored.replacedCount}箇所を戻しました。</p>
-            {restored.generalized.length > 0 && (
-              <p className="hint">
-                一般化から戻した語: {restored.generalized.map((g) => `${g.from}→${g.to}`).join('、')}（AIが一般的な意味で使った語も戻るので、確かめてください）
-              </p>
-            )}
-            {restored.unmatched.length > 0 && <p className="hint warn">戻せなかったラベル: {restored.unmatched.join('、')}（AIが書き換えた可能性があります）</p>}
-            <button
-              type="button"
-              disabled={!current}
-              onClick={async () => setMessage((await copyText(restored.restored)) ? 'コピーしました。原文を含むので、外部のサービスには貼り付けないでください。' : 'コピーできませんでした。')}
-            >
-              コピー
-            </button>
-            {message && <p className="hint">{message}</p>}
+          <p className="hint">「人物A」などのラベルや、「30代」などに一般化した語を元の語に戻します。加工後の文章のほかの所にも同じ語がある一般化と、削除した情報は戻せません。</p>
+          <textarea rows={5} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="AIの回答を貼り付け" aria-label="AIの回答" />
+          <button
+            type="button"
+            disabled={!answer.trim() || !current}
+            onClick={() => void restore()}
+          >
+            ラベルを元の語に戻す
+          </button>
+          {restored && (
+            <>
+              <div className="output-preview" aria-label="元に戻した文章">
+                {restored.restored}
+              </div>
+              <p className="hint">{restored.replacedCount}箇所を戻しました。</p>
+              {restored.generalized.length > 0 && (
+                <p className="hint">
+                  一般化から戻した語: {restored.generalized.map((g) => `${g.from}→${g.to}`).join('、')}（AIが一般的な意味で使った語も戻るので、確かめてください）
+                </p>
+              )}
+              {restored.unmatched.length > 0 && <p className="hint warn">戻せなかったラベル: {restored.unmatched.join('、')}（AIが書き換えた可能性があります）</p>}
+              <button
+                type="button"
+                disabled={!current}
+                onClick={async () => setMessage((await copyText(restored.restored)) ? 'コピーしました。原文を含むので、外部のサービスには貼り付けないでください。' : 'コピーできませんでした。')}
+              >
+                コピー
+              </button>
+              {message && <p className="hint">{message}</p>}
+            </>
+          )}
           </>
         )}
         <div className="restore-file">
-          <p className="hint">AIが作った・手を加えた Excel・CSV・PDF も、中のラベルを元の語に戻して保存できます。PDF はレイアウトを保ったまま戻します。</p>
+          <p className="hint">
+            {hasLabels
+              ? 'AIが作った・手を加えた Excel・CSV・PDF・画像も、中のラベルを元の語に戻して保存できます。PDF はレイアウトを保ったまま戻します。画像の中のラベルは OCR で探して元の語を描き込みます。'
+              : '塗りつぶして保存した画像・PDF を読み込むと、「[顔1]」などの所に元の顔を戻して保存できます。AIが手を加えた画像では、ラベルを OCR で探して戻します。'}
+          </p>
           <button type="button" disabled={!current} onClick={() => fileInput.current?.click()}>
             <Icon name="file" />
             ファイルを読込んで戻す
@@ -140,9 +197,9 @@ export function RestorePanel() {
           <input
             ref={fileInput}
             type="file"
-            accept={[...ACCEPTED_EXTENSIONS, PDF_EXTENSION].join(',')}
+            accept={[...ACCEPTED_EXTENSIONS, PDF_EXTENSION, ...IMAGE_EXTENSIONS].join(',')}
             hidden
-            aria-label="復元する Excel・CSV・PDF ファイル"
+            aria-label="復元する Excel・CSV・PDF・画像ファイル"
             onChange={(e) => void restoreFile(e.target.files?.[0])}
           />
           {fileMessage && !restoredFile && <p className="hint warn">{fileMessage}</p>}
@@ -151,7 +208,9 @@ export function RestorePanel() {
               <p className="hint" role="status">
                 {restoredFile.cellCount === 0
                   ? '戻せるラベルが見つかりませんでした。'
-                  : restoredFile.mimeType === 'application/pdf'
+                  : restoredFile.mimeType === 'image/png' && restoredFile.replacedCount === 0
+                    ? '元の画像に戻しました。'
+                  : restoredFile.mimeType === 'application/pdf' || restoredFile.mimeType === 'image/png'
                     ? `${restoredFile.replacedCount}箇所を戻しました。`
                     : `${restoredFile.cellCount}セル・${restoredFile.replacedCount}箇所を戻しました。`}
               </p>
