@@ -48,6 +48,8 @@ export type State = {
   analyzing: boolean;
   error: string | null;
   selectedId: string | null;
+  /** 押す前に、まとめて変わる項目を光らせる（組合せリスクの対策） */
+  highlight: string[];
   confirmed: Confirmed | null;
   destination: Destination;
   answers: Record<string, Answer | undefined>;
@@ -75,6 +77,7 @@ type Actions = {
   setAnalyzing: (v: boolean) => void;
   setError: (e: string | null) => void;
   select: (id: string | null) => void;
+  setHighlight: (ids: string[]) => void;
   confirm: (c: Confirmed | null) => void;
   setDestination: (d: Destination) => void;
   setAnswer: (id: string, a: Answer) => void;
@@ -108,6 +111,7 @@ const initial: State = {
   analyzing: false,
   error: null,
   selectedId: null,
+  highlight: [],
   confirmed: null,
   destination: { kind: 'copy' },
   answers: {},
@@ -172,6 +176,7 @@ export const useStore = create<State & Actions>((set) => ({
   setAnalyzing: (analyzing) => set({ analyzing }),
   setError: (error) => set((s) => ({ error, ...(error ? { confirmed: null, confirmationInvalidated: s.confirmationInvalidated || s.confirmed !== null } : {}) })),
   select: (selectedId) => set({ selectedId }),
+  setHighlight: (highlight) => set({ highlight }),
   confirm: (confirmed) => set((s) => {
     if (confirmed && (!canConfirm(s) || confirmed.contentId !== s.result?.contentId || confirmed.masked !== s.result.masked || confirmed.destinationKey !== destinationKey(s.destination))) return s;
     return { confirmed, confirmationInvalidated: false };

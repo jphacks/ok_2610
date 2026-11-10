@@ -117,13 +117,23 @@ export function explain(c: Candidate, ctx: ExplainContext): Explanation {
 
   return {
     candidateId: c.id,
-    what: `${CATEGORY_INFO[category].label}「${c.text}」→ ${describeAction(c.action)}`,
+    what: describeResult(CATEGORY_INFO[category].label, c),
     why,
     ifKept: t.ifKept,
     alternatives,
     aiInferred,
     notes,
   };
+}
+
+/** 見出し。固定の例（「1980年代 など」）ではなく、この語の実際の仕上がりで書く */
+function describeResult(label: string, c: Candidate): string {
+  const head = `${label}「${c.text}」`;
+  if (c.action.kind === 'keep') return `${head}はそのまま残しています`;
+  if (c.action.kind === 'delete' || !c.output) return `${head}を削除しています`;
+  const how = { categoryLabel: '種類のラベル', pseudonym: '仮の名前', partialMask: '一部を隠した形', generalize: '粗くした表現', replace: '指定した語' }[c.action.kind];
+  const same = c.action.kind === 'pseudonym' ? '。同じ対象は同じ名前で表します' : '';
+  return `${head}を「${c.output}」（${how}）にしています${same}`;
 }
 
 export { describeAction };

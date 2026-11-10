@@ -31,3 +31,17 @@ export function IssuesPanel({ onSettings }: { onSettings: (section?: SettingsSec
     </div>
   );
 }
+
+/** API キーやパスワードなど、消すしかない値を消したことを結果のいちばん上で伝える（本文の中の印だけでは気づきにくい） */
+export function SecretNotice() {
+  const result = useStore((s) => s.result);
+  const fresh = useStore((s) => !s.analyzing && s.resultRevision === s.revision);
+  if (!result || !fresh) return null;
+  const secrets = result.candidates.filter((c) => c.categories.includes('credential') && c.action.kind !== 'keep');
+  if (!secrets.length) return null;
+  return (
+    <p className="secret-notice" role="status">
+      API キーやパスワードなどの秘密の値を{secrets.length}件消しました。この値は残せません。
+    </p>
+  );
+}

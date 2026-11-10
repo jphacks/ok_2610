@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { Action, ManualOp } from '../../core/model/types';
 import { RISK_TONE } from '../labels';
 import { useStore } from '../store';
@@ -6,13 +7,26 @@ import { useStore } from '../store';
 export function RiskPanel() {
   const result = useStore((s) => s.result);
   const addOps = useStore((s) => s.addOps);
+  const undo = useStore((s) => s.undo);
+  const setHighlight = useStore((s) => s.setHighlight);
+  // まとめて適用したあと、何か所変えたかと「元に戻す」を出す
+  const [applied, setApplied] = useState<{ count: number; text: string } | null>(null);
   if (!result || !result.text.trim()) return null;
+  const appliedNote = applied !== null && applied.text === result.text && (
+    <p className="applied-note" role="status">
+      {applied.count}か所を変えました。
+      <button type="button" className="link" onClick={() => { undo(); setApplied(null); }}>元に戻す</button>
+    </p>
+  );
   const finding = result.risks[0];
   const byId = new Map(result.candidates.map((c) => [c.id, c]));
 
   if (!finding) {
     return (
-      <p className="risk-quiet">組合せの手がかりは少なめです。</p>
+      <>
+        <p className="risk-quiet">組合せの手がかりは少なめです。</p>
+        {appliedNote}
+      </>
     );
   }
 
@@ -34,7 +48,10 @@ export function RiskPanel() {
       }),
     );
     addOps(ops);
+    setHighlight([]);
+    setApplied({ count: ops.length, text: result.text });
   }
+  const planIds = result.riskPlan?.steps.flatMap((step) => step.candidateIds) ?? [];
 
   return (
     <div className={`card risk-card tone-${RISK_TONE[finding.level]}`}>
@@ -46,11 +63,21 @@ export function RiskPanel() {
           <p>
             追加加工で「{result.riskPlan.levelAfter}」になる見込みです。
           </p>
-          <button type="button" className="risk-action" onClick={() => applyPlan()}>
+          <button
+            type="button"
+            className="risk-action"
+            onClick={() => applyPlan()}
+            onPointerEnter={() => setHighlight(planIds)}
+            onPointerLeave={() => setHighlight([])}
+            onFocus={() => setHighlight(planIds)}
+            onBlur={() => setHighlight([])}
+          >
             対策をまとめて適用（{result.riskPlan.steps.length}件）
           </button>
+          <p className="hint">ボタンに合わせると、変わる箇所が本文で点線で囲まれます。</p>
         </div>
       )}
+      {appliedNote}
       <details className="risk-details"><summary>理由と個別の対策</summary>
         {finding.attributes.length > 0 && (
           <div className="risk-attributes">
@@ -76,7 +103,14 @@ export function RiskPanel() {
               {finding.suggestions.map((s) => (
                 <li key={s.candidateIds.join(',')}>
                   <span>{s.effect}</span>
-                  <button type="button" onClick={() => apply(s.candidateIds, s.action)}>
+                  <button
+                    type="button"
+                    onClick={() => { apply(s.candidateIds, s.action); setHighlight([]); }}
+                    onPointerEnter={() => setHighlight(s.candidateIds)}
+                    onPointerLeave={() => setHighlight([])}
+                    onFocus={() => setHighlight(s.candidateIds)}
+                    onBlur={() => setHighlight([])}
+                  >
                     適用
                   </button>
                 </li>

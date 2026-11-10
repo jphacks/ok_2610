@@ -13,7 +13,7 @@ export type RenderResult = {
   outputs: Map<string, string>;
 };
 
-function partialMask(text: string, visible: number): string {
+export function partialMask(text: string, visible: number): string {
   let shown = 0;
   return [...text]
     .reverse()

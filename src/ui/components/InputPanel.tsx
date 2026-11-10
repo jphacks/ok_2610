@@ -18,6 +18,8 @@ export function InputPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [fileNotes, setFileNotes] = useState<string[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // 解析が終わって入力欄から離れたら、加工した文章に場所を譲るため2行ぶんに畳む
+  const [editing, setEditing] = useState(false);
   const [reading, setReading] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -152,7 +154,14 @@ export function InputPanel() {
         <div>
           <h2 id="input-title">{fileSource ? '元のファイル' : '元の文章'}</h2>
         </div>
-        <span className="text-count">{fileSource ? fileSummary(fileSource) : `${text.length.toLocaleString()} 文字`}</span>
+        <div className="heading-actions">
+          <span className="text-count">{fileSource ? fileSummary(fileSource) : `${text.length.toLocaleString()} 文字`}</span>
+          {text && (
+            <button type="button" className="ghost clear-button" onClick={() => setConfirmOpen(true)}>
+              削除
+            </button>
+          )}
+        </div>
       </div>
       {fileSource ? (
         <div
@@ -175,8 +184,13 @@ export function InputPanel() {
         </div>
       ) : (
         <textarea
-          className="input"
+          className={`input ${text.trim() && !editing ? 'collapsed' : ''}`}
           value={text}
+          onFocus={() => setEditing(true)}
+          onBlur={(e) => {
+            e.currentTarget.scrollTop = 0;
+            collapseAfterClick(() => setEditing(false));
+          }}
           onChange={(e) => setText(e.target.value)}
           onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
           onDrop={onDrop}
@@ -202,9 +216,6 @@ export function InputPanel() {
           aria-label="読み込む Excel・CSV・PDF・画像ファイル"
           onChange={(e) => void onFile(e.target.files?.[0])}
         />
-        <button type="button" className="ghost clear-button" onClick={() => setConfirmOpen(true)} disabled={!text}>
-          削除
-        </button>
       </div>
       <ConfirmDialog
         open={confirmOpen}
@@ -225,6 +236,24 @@ export function InputPanel() {
       )}
     </section>
   );
+}
+
+/**
+ * 入力欄から離れたときに畳むのは、そのクリックが終わってからにする。
+ * 押し下げた瞬間に畳むと画面が上にずれ、指を離した位置が別のボタンになってクリックが外れるため。
+ */
+function collapseAfterClick(collapse: () => void) {
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    window.removeEventListener('pointerup', finish, true);
+    window.clearTimeout(timer);
+    window.setTimeout(collapse, 0);
+  };
+  // キーボードで移ったときは pointerup が来ないので、少し待って畳む
+  const timer = window.setTimeout(finish, 400);
+  window.addEventListener('pointerup', finish, true);
 }
 
 function fileSummary(source: FileSource): string {
