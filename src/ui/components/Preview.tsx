@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ALL_CATEGORIES, categoryLabel } from '../../core/model/categories';
 import { countOccurrences, manualMaskOps } from '../../core/manual';
 import type { Category, OutputSegment } from '../../core/model/types';
@@ -36,13 +36,14 @@ function maskedStarts(segments: OutputSegment[]): { seg: OutputSegment; start: n
  * 比較プレビュー（FR-20）。加工後の文章は、コピー・挿入される内容と同じ文字列から描く。
  * 原文はこの拡張の画面の中だけに表示する。
  */
-export function Preview({ mode, onMode }: { mode: 'masked' | 'original'; onMode: (mode: 'masked' | 'original') => void }) {
+export function Preview({ mode, onMode, detail }: { mode: 'masked' | 'original'; onMode: (mode: 'masked' | 'original') => void; detail?: ReactNode }) {
   const result = useStore((s) => s.result);
   const selectedId = useStore((s) => s.selectedId);
   const select = useStore((s) => s.select);
   const addOps = useStore((s) => s.addOps);
   const { ops, redo, undo, redoOp } = useStore();
   const source = useStore((s) => s.source);
+  const highlight = useStore((s) => s.highlight);
   const [anchor, setAnchor] = useState<{ start: number; end: number } | null>(null);
   const [term, setTerm] = useState('');
   const [all, setAll] = useState(true);
@@ -72,6 +73,17 @@ export function Preview({ mode, onMode }: { mode: 'masked' | 'original'; onMode:
   };
 
   const byId = new Map(result.candidates.map((c) => [c.id, c]));
+  const pending = new Set(highlight);
+  /** 印の見た目。手動で直した箇所・秘密の値（消すしかないもの）・まとめて変わる予定の箇所を見分ける */
+  const markClass = (id: string) => {
+    const c = byId.get(id);
+    return [c?.manual ? 'manual' : '', c?.categories.includes('credential') ? 'secret' : '', pending.has(id) ? 'pending' : '', selectedId === id ? 'selected' : ''].filter(Boolean).join(' ');
+  };
+  const counts = {
+    changed: result.candidates.filter((c) => c.action.kind !== 'keep' && !c.manual).length,
+    kept: result.candidates.filter((c) => c.action.kind === 'keep' && !c.manual).length,
+    manual: result.candidates.filter((c) => c.manual).length,
+  };
   // 読み込んだ Excel・CSV は、文章に直さずシートの表として描く
   const sheetSource = source && source.kind !== 'pdf' && source.text === result.text ? source : null;
 
@@ -101,6 +113,13 @@ export function Preview({ mode, onMode }: { mode: 'masked' | 'original'; onMode:
         </div>
       </div>
 
+      <p className="legend" aria-label="色の意味と件数">
+        <span><span className="mark changed">加工</span> {counts.changed}</span>
+        <span><span className="mark kept">残した候補</span> {counts.kept}</span>
+        <span><span className="mark changed manual">手動</span> {counts.manual}</span>
+        <span className="legend-hint">押すと理由と直し方が出ます</span>
+      </p>
+
       {sheetSource ? (
         <SheetPreview mode={mode} source={sheetSource} segments={result.segments} candidates={result.candidates} onMouseUp={onSelect} />
       ) : mode === 'masked' ? (
@@ -113,7 +132,7 @@ export function Preview({ mode, onMode }: { mode: 'masked' | 'original'; onMode:
                 key={i}
                 type="button"
                 data-start={seg.kind === 'kept' ? start : undefined}
-                className={`mark ${seg.kind} ${byId.get(seg.candidateId)?.manual ? 'manual' : ''} ${selectedId === seg.candidateId ? 'selected' : ''}`}
+                className={`mark ${seg.kind} ${markClass(seg.candidateId)}`}
                 title={seg.kind === 'changed' ? `元: ${seg.original}` : 'そのまま残しています'}
                 onClick={() => select(seg.candidateId)}
               >
@@ -129,7 +148,7 @@ export function Preview({ mode, onMode }: { mode: 'masked' | 'original'; onMode:
               <span
                 key={ch.start}
                 data-start={ch.start}
-                className={`mark ${byId.get(ch.id)?.output === ch.text ? 'kept' : 'changed'} ${selectedId === ch.id ? 'selected' : ''}`}
+                className={`mark ${byId.get(ch.id)?.output === ch.text ? 'kept' : 'changed'} ${markClass(ch.id)}`}
                 onClick={() => select(ch.id ?? null)}
               >
                 {ch.text}
@@ -142,6 +161,7 @@ export function Preview({ mode, onMode }: { mode: 'masked' | 'original'; onMode:
           )}
         </div>
       )}
+      {detail}
       <div className="manual-mask" role="group" aria-label="手動でマスク">
         <div className="row">
           <input
@@ -185,9 +205,6 @@ export function Preview({ mode, onMode }: { mode: 'masked' | 'original'; onMode:
                   : null}
         </p>
       </div>
-      <p className="hint legend">
-        <span className="mark changed">加工</span> <span className="mark kept">残した候補</span> <span className="mark changed manual">手動</span> 色付きの箇所から修正できます。
-      </p>
     </div>
   );
 }

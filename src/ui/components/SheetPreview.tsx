@@ -39,7 +39,8 @@ export function SheetPreview({
           </span>
         );
       }
-      const cls = `mark ${p.kind} ${byId.get(p.candidateId)?.manual ? 'manual' : ''} ${selectedId === p.candidateId ? 'selected' : ''}`;
+      const c = byId.get(p.candidateId);
+      const cls = `mark ${p.kind} ${c?.manual ? 'manual' : ''} ${c?.categories.includes('credential') ? 'secret' : ''} ${selectedId === p.candidateId ? 'selected' : ''}`;
       if (mode === 'original') {
         return (
           <span key={i} data-start={cell?.quoted ? undefined : p.start} className={cls} onClick={() => select(p.candidateId)}>

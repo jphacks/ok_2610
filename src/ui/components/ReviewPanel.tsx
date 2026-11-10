@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store';
 import { DetailPanel } from './DetailPanel';
-import { IssuesPanel } from './IssuesPanel';
+import { IssuesPanel, SecretNotice } from './IssuesPanel';
 import { OutputPanel } from './OutputPanel';
 import { Preview } from './Preview';
 import { RiskPanel } from './RiskPanel';
@@ -13,9 +13,9 @@ export function ReviewPanel({ onSettings }: { onSettings: (section?: SettingsSec
   return (
     <section className="panel results-panel" aria-labelledby="result-title" aria-busy={analyzing}>
       <div className="section-heading"><h2 id="result-title">加工した文章</h2><span className="text-count">{analyzing ? '更新中…' : result ? `${result.candidates.length} 箇所を検出` : '解析を待っています'}</span></div>
+      <SecretNotice />
       <RiskPanel />
-      <Preview mode={mode} onMode={setMode} />
-      <DetailPanel />
+      <Preview mode={mode} onMode={setMode} detail={<DetailPanel />} />
       <IssuesPanel onSettings={onSettings} />
       <OutputPanel onConditions={() => onSettings('conditions')} showingOriginal={mode === 'original'} onShowMasked={() => setMode('masked')} />
     </section>

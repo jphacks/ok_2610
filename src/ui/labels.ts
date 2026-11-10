@@ -21,22 +21,22 @@ export const RISK_TONE: Record<RiskLevel, 'info' | 'warn' | 'danger' | 'unknown'
   評価不能: 'unknown',
 };
 
-/** 項目ごとに選べる処理 */
-export const ACTION_CHOICES: { key: string; label: string; action: Action }[] = [
-  { key: 'keep', label: 'そのまま残す', action: { kind: 'keep' } },
-  { key: 'pseudonym', label: '仮の名前（人物A など）', action: { kind: 'pseudonym' } },
-  { key: 'categoryLabel', label: '種類のラベル（[電話番号1] など）', action: { kind: 'categoryLabel' } },
-  { key: 'partialMask', label: '一部だけ隠す（末尾4文字を残す）', action: { kind: 'partialMask', visible: 4 } },
-  { key: 'g-year', label: '年だけにする', action: { kind: 'generalize', level: 'year' } },
-  { key: 'g-decade', label: '年代にする', action: { kind: 'generalize', level: 'decade' } },
-  { key: 'g-month', label: '月単位にする', action: { kind: 'generalize', level: 'month' } },
-  { key: 'g-ageBand', label: '年齢帯にする', action: { kind: 'generalize', level: 'ageBand' } },
-  { key: 'g-prefecture', label: '都道府県まで広げる', action: { kind: 'generalize', level: 'prefecture' } },
-  { key: 'g-region', label: '地方まで広げる', action: { kind: 'generalize', level: 'region' } },
-  { key: 'g-industry', label: '業種にする', action: { kind: 'generalize', level: 'industry' } },
-  { key: 'g-role', label: '役割名にする', action: { kind: 'generalize', level: 'role' } },
-  { key: 'g-abstract', label: '抽象的な表現にする', action: { kind: 'generalize', level: 'abstract' } },
-  { key: 'delete', label: '削除する', action: { kind: 'delete' } },
+/** 項目ごとに選べる処理。short は選択肢のボタンに出す短い名前（仕上がりの見本と並べる） */
+export const ACTION_CHOICES: { key: string; label: string; short: string; action: Action }[] = [
+  { key: 'keep', label: 'そのまま残す', short: 'そのまま', action: { kind: 'keep' } },
+  { key: 'pseudonym', label: '仮の名前（人物A など）', short: '仮の名前', action: { kind: 'pseudonym' } },
+  { key: 'categoryLabel', label: '種類のラベル（[電話番号1] など）', short: '種類のラベル', action: { kind: 'categoryLabel' } },
+  { key: 'partialMask', label: '一部だけ隠す（末尾4文字を残す）', short: '末尾4文字だけ', action: { kind: 'partialMask', visible: 4 } },
+  { key: 'g-year', label: '年だけにする', short: '年だけ', action: { kind: 'generalize', level: 'year' } },
+  { key: 'g-decade', label: '年代にする', short: '年代', action: { kind: 'generalize', level: 'decade' } },
+  { key: 'g-month', label: '月単位にする', short: '月まで', action: { kind: 'generalize', level: 'month' } },
+  { key: 'g-ageBand', label: '年齢帯にする', short: '年齢帯', action: { kind: 'generalize', level: 'ageBand' } },
+  { key: 'g-prefecture', label: '都道府県まで広げる', short: '都道府県', action: { kind: 'generalize', level: 'prefecture' } },
+  { key: 'g-region', label: '地方まで広げる', short: '地方', action: { kind: 'generalize', level: 'region' } },
+  { key: 'g-industry', label: '業種にする', short: '業種', action: { kind: 'generalize', level: 'industry' } },
+  { key: 'g-role', label: '役割名にする', short: '役割名', action: { kind: 'generalize', level: 'role' } },
+  { key: 'g-abstract', label: '抽象的な表現にする', short: 'ぼかす', action: { kind: 'generalize', level: 'abstract' } },
+  { key: 'delete', label: '削除する', short: '削除', action: { kind: 'delete' } },
 ];
 
 export function actionKey(a: Action): string {

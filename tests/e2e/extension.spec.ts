@@ -49,9 +49,12 @@ test('認証情報が残る操作はできず、出力を止める（SF-02）', 
   await page.getByLabel('解析する文章').fill('APIキーは sk-proj-abcdefghijklmnopqrstuvwx です。');
   const output = page.getByLabel('加工後の文章');
   await expect(output).not.toContainText('sk-proj', { timeout: 60_000 });
+  // 消したことを結果のいちばん上で知らせる
+  await expect(page.getByText(/秘密の値を1件消しました。この値は残せません/)).toBeVisible();
+  // 理由の欄では「そのまま」を選べない
   await page.getByLabel('加工後の文章').getByRole('button').first().click();
-  await page.getByRole('button', { name: '解除（残す）' }).click();
-  await expect(page.getByText(/認証情報は常に解除できません/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /処理を「そのまま」に変える/ })).toBeDisabled();
+  await expect(page.getByText('認証情報は残せません。どの設定でも消します。')).toBeVisible();
   await expect(output).not.toContainText('sk-proj');
 });
 

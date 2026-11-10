@@ -1,26 +1,54 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ALL_CATEGORIES, categoryLabel } from '../../core/model/categories';
 import { MESSAGES } from '../../core/explain/messages';
 import type { Category } from '../../core/model/types';
+import { ALWAYS_LOCKED } from '../../core/policy';
+import { previewAction } from '../../core/transform/preview';
 import { ACTION_CHOICES, actionKey } from '../labels';
 import { useStore } from '../store';
 
-/** 項目ごとの理由と手動修正（FR-14, FR-19） */
+/**
+ * 項目ごとの理由と手動修正（FR-14, FR-19）。
+ * 処理は「押すとこう変わる」が一目で分かるよう、仕上がりの見本を書いたボタンで選ぶ（Issue #29）。
+ */
 export function DetailPanel() {
   const result = useStore((s) => s.result);
   const selectedId = useStore((s) => s.selectedId);
   const select = useStore((s) => s.select);
   const addOp = useStore((s) => s.addOp);
   const [replaceText, setReplaceText] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
   const c = result?.candidates.find((x) => x.id === selectedId);
+
+  // 押した語のすぐ下に開くので、画面の外にはみ出すときだけ見える位置まで送る
+  useEffect(() => {
+    if (!selectedId) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    ref.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  }, [selectedId]);
+
   if (!result || !c) return null;
   const ex = result.explanations[c.id];
   const entity = c.entityId ? result.entities.find((e) => e.id === c.entityId) : undefined;
   const others = entity ? result.entities.filter((e) => e.kind === entity.kind && e.id !== entity.id) : [];
   const range = { start: c.start, end: c.end };
+  const current = actionKey(c.action);
+  const locked = c.categories.some((cat) => ALWAYS_LOCKED.includes(cat));
+
+  // その語に効く処理だけを、仕上がりの見本つきで並べる。仕上がりが同じ選択肢は1つにまとめる
+  const seen = new Set<string>();
+  const options = ACTION_CHOICES.flatMap((choice) => {
+    const output = previewAction(c, choice.action, entity?.label);
+    if (output === null) return [];
+    const key = output === '' ? '\u0000delete' : output;
+    if (seen.has(key) && choice.key !== current) return [];
+    seen.add(key);
+    return [{ ...choice, output }];
+  });
+  if (c.action.kind === 'replace') options.unshift({ key: 'replace', label: '指定した語', short: '指定した語', action: c.action, output: c.action.text });
 
   return (
-    <div className="card detail" aria-live="polite">
+    <div className="card detail" aria-live="polite" ref={ref}>
       <div className="row between">
         <h3>理由</h3>
         <button type="button" className="ghost" onClick={() => select(null)} aria-label="理由を閉じる">
@@ -31,14 +59,12 @@ export function DetailPanel() {
         <>
           <p className="what">{ex.what}</p>
           {ex.aiInferred && <span className="chip chip-warn">{MESSAGES.aiInferred}</span>}
-          <h4>なぜ</h4>
-          <ul>
+          <ul className="why">
             {ex.why.map((w) => (
               <li key={w}>{w}</li>
             ))}
           </ul>
-          <h4>そのまま残すと</h4>
-          <p>{ex.ifKept}</p>
+          <p className="if-kept"><span>そのまま残すと</span>{ex.ifKept}</p>
           {ex.notes.length > 0 && (
             <ul className="notes">
               {ex.notes.map((n) => (
@@ -46,86 +72,91 @@ export function DetailPanel() {
               ))}
             </ul>
           )}
-          <h4>ほかの選択肢</h4>
-          <p className="hint">{ex.alternatives.join(' / ')}</p>
         </>
       )}
 
-      <h4>処理を変える</h4>
-      <div className="row">
-        <select
-          aria-label="処理"
-          value={actionKey(c.action)}
-          onChange={(e) => {
-            const choice = ACTION_CHOICES.find((a) => a.key === e.target.value);
-            if (choice) addOp({ kind: 'setAction', ...range, action: choice.action });
-          }}
-        >
-          {ACTION_CHOICES.map((a) => (
-            <option key={a.key} value={a.key}>
-              {a.label}
-            </option>
-          ))}
-          {c.action.kind === 'replace' && <option value="replace">置換語: {c.action.text}</option>}
-        </select>
-        <button type="button" onClick={() => addOp({ kind: 'release', ...range })} disabled={c.action.kind === 'keep'}>
-          解除（残す）
-        </button>
-      </div>
-      <div className="row">
-        <input value={replaceText} onChange={(e) => setReplaceText(e.target.value)} placeholder="置換語を入力" aria-label="置換語" />
-        <button
-          type="button"
-          disabled={!replaceText.trim()}
-          onClick={() => {
-            addOp({ kind: 'setAction', ...range, action: { kind: 'replace', text: replaceText.trim() } });
-            setReplaceText('');
-          }}
-        >
-          置き換える
-        </button>
-      </div>
-      <div className="row">
-        <label className="inline">
-          種類の訂正
-          <select
-            value={c.categories[0]}
-            onChange={(e) => addOp({ kind: 'setCategory', ...range, category: e.target.value as Category })}
-          >
-            {ALL_CATEGORIES.map((cat) => (
-              <option key={cat} value={cat}>
-                {categoryLabel(cat)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {entity && (
-        <div className="row">
-          <span className="hint">
-            {entity.label}（{entity.mentionIds.length}箇所）
-          </span>
-          {others.length > 0 && (
-            <select
-              aria-label="同じ対象として統合"
-              value=""
-              onChange={(e) => e.target.value && addOp({ kind: 'mergeEntity', from: c.text, into: e.target.value })}
+      <div className="options" role="group" aria-label="処理を選ぶ">
+        {options.map((o) => {
+          const disabled = o.key === 'keep' && locked;
+          return (
+            <button
+              key={o.key}
+              type="button"
+              className={`option ${o.key === current ? 'on' : ''}`}
+              aria-pressed={o.key === current}
+              aria-label={`処理を「${o.short}」に変える（仕上がり: ${o.output || '削除'}）`}
+              disabled={disabled}
+              onClick={() => {
+                if (o.key === current) return;
+                if (o.key === 'keep') addOp({ kind: 'release', ...range });
+                else addOp({ kind: 'setAction', ...range, action: o.action });
+              }}
             >
-              <option value="">同じ対象として統合…</option>
-              {others.map((o) => (
-                <option key={o.id} value={o.canonical}>
-                  {o.label}（{o.canonical}）
+              <span className={`option-out ${o.key === 'keep' ? 'kept' : 'changed'}`}>{o.output || '（削除）'}</span>
+              <span className="option-name">{o.short}</span>
+            </button>
+          );
+        })}
+      </div>
+      {locked && <p className="hint">認証情報は残せません。どの設定でも消します。</p>}
+
+      <details className="detail-more">
+        <summary>細かく直す（置き換える語・種類・同じ対象）</summary>
+        <div className="row">
+          <input value={replaceText} onChange={(e) => setReplaceText(e.target.value)} placeholder="置換語を入力" aria-label="置換語" />
+          <button
+            type="button"
+            disabled={!replaceText.trim()}
+            onClick={() => {
+              addOp({ kind: 'setAction', ...range, action: { kind: 'replace', text: replaceText.trim() } });
+              setReplaceText('');
+            }}
+          >
+            置き換える
+          </button>
+        </div>
+        <div className="row">
+          <label className="inline">
+            種類の訂正
+            <select
+              value={c.categories[0]}
+              onChange={(e) => addOp({ kind: 'setCategory', ...range, category: e.target.value as Category })}
+            >
+              {ALL_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>
+                  {categoryLabel(cat)}
                 </option>
               ))}
             </select>
-          )}
-          {entity.mentionIds.length > 1 && (
-            <button type="button" className="ghost" onClick={() => addOp({ kind: 'splitEntity', ...range })}>
-              この箇所を別の対象にする
-            </button>
-          )}
+          </label>
         </div>
-      )}
+        {entity && (
+          <div className="row">
+            <span className="hint">
+              {entity.label}（{entity.mentionIds.length}箇所）
+            </span>
+            {others.length > 0 && (
+              <select
+                aria-label="同じ対象として統合"
+                value=""
+                onChange={(e) => e.target.value && addOp({ kind: 'mergeEntity', from: c.text, into: e.target.value })}
+              >
+                <option value="">同じ対象として統合…</option>
+                {others.map((o) => (
+                  <option key={o.id} value={o.canonical}>
+                    {o.label}（{o.canonical}）
+                  </option>
+                ))}
+              </select>
+            )}
+            {entity.mentionIds.length > 1 && (
+              <button type="button" className="ghost" onClick={() => addOp({ kind: 'splitEntity', ...range })}>
+                この箇所を別の対象にする
+              </button>
+            )}
+          </div>
+        )}
+      </details>
     </div>
   );
 }
