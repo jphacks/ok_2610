@@ -122,8 +122,8 @@ describe('exportSpreadsheet（xlsx）', () => {
     expect(sheet).toContain('<tablePart r:id="rId1"/>');
     expect(strFromU8(files['_rels/.rels']!)).not.toContain('docProps');
     expect(strFromU8(files['xl/_rels/workbook.xml.rels']!)).not.toContain('calcChain');
-    // 共有文字列は番号を保ったまま、使われなくなった値だけ空にする
-    expect(strFromU8(files['xl/sharedStrings.xml']!)).toContain('<si><t>名前</t></si><si><t>メール</t></si><si><t>佐藤</t></si><si><t/></si>');
+    // 共有文字列は番号を保ったまま、使われなくなった値だけ空にする（「名前」の列の「佐藤」も氏名として隠す）
+    expect(strFromU8(files['xl/sharedStrings.xml']!)).toContain('<si><t>名前</t></si><si><t>メール</t></si><si><t/></si><si><t/></si>');
     expect(out.notes.join('\n')).toMatch(/コメント・メモは加工後のファイルから取り除きました/);
     expect(out.notes.join('\n')).toMatch(/作成者などのファイル情報/);
   });

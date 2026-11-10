@@ -1,6 +1,7 @@
 import type { Category, Certainty, Evidence, SensitiveKind, Span, SpanTier } from '../model/types';
 import { TIER } from '../model/types';
 import { luhnValid, myNumberValid } from './checksums';
+import { detectFurigana, isFieldLabel } from './furigana';
 import { normalizeForDetection } from './normalize';
 import {
   CITY_PREFECTURE,
@@ -535,6 +536,17 @@ const RULES: Rule[] = [
     evidence: label('直前に「氏名」などの見出し'),
   },
   {
+    // 表や履歴書の欄（「氏名 山田 太郎」や、タブ区切りの「氏名」「山田太郎」）。区切りが空白・タブだけのもの
+    id: 'name-label-cell',
+    category: 'personName',
+    re: re(`(?<![^\n\t])(?:ご?氏名|お名前|名前)[ \t]+((?:[${HAN}][${HAN}${HIRA}]{0,5}|[${KATA}]{2,10})(?: (?:[${HAN}${HIRA}]{1,6}|[${KATA}]{1,10}))?)(?=[ \t]*(?:\r?\n|\t|$|㊞|印))`),
+    group: 1,
+    tier: TIER.certainRule,
+    certainty: '確定',
+    evidence: label('直前に「氏名」などの見出し'),
+    validate: (v) => isPersonName(v) && !isFieldLabel(v),
+  },
+  {
     id: 'name-honorific',
     category: 'personName',
     re: re(`(?<![${HAN}${KATA}])((?:(?:[${HAN}]{1,4}(?:[ \\u3000]?[${HAN}]{1,3})?)|(?:[${KATA}]{2,10}(?:[ \\u3000・][${KATA}]{2,10})?))(?:[（(][${HIRA}${KATA} \\u3000]+[）)])?)(?=(?:${HONORIFICS})(?!${NOT_HONORIFIC_AFTER}))`),
@@ -567,6 +579,8 @@ const RULES: Rule[] = [
     tier: TIER.certainRule,
     certainty: '推定',
     evidence: label('口座の名義、または漢字の氏名に続くフリガナ'),
+    // 「氏名（フリガナ）」の見出しそのものは名前ではない
+    validate: (v) => !isFieldLabel(v),
   },
   {
     id: 'name-self-intro',
@@ -663,7 +677,8 @@ export function detectRules(text: string): Span[] {
       });
     }
   }
+  spans.push(...detectFurigana(text));
   return spans;
 }
 
-export const RULE_ENGINE_VERSION = 'rule-3';
+export const RULE_ENGINE_VERSION = 'rule-4';
