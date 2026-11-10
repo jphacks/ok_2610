@@ -12,9 +12,11 @@ const PERIODS = [
 const day = (offset: number) => new Date(Date.now() - offset * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const fmt = (n: number) => n.toLocaleString('ja-JP');
 
-export function Overview() {
+/** fixedDepartment: 担当部署だけを見る役割（dept_viewer）のとき、その部署に固定する */
+export function Overview({ fixedDepartment }: { fixedDepartment: string | null }) {
   const [days, setDays] = useState(30);
-  const [department, setDepartment] = useState('');
+  const [chosen, setDepartment] = useState('');
+  const department = fixedDepartment ?? chosen;
   const [stats, setStats] = useState<Stats | null>(null);
   const [departments, setDepartments] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +55,7 @@ export function Overview() {
             <button key={p.days} type="button" aria-pressed={days === p.days} onClick={() => setDays(p.days)}>{p.label}</button>
           ))}
         </div>
+        {fixedDepartment ? <span className="period">部署 {fixedDepartment}</span> : (
         <label className="select">
           <span>部署</span>
           <select value={department} onChange={(e) => setDepartment(e.target.value)}>
@@ -60,6 +63,7 @@ export function Overview() {
             {departments.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
         </label>
+        )}
         <span className="period">{from} 〜 {to}</span>
       </div>
 
