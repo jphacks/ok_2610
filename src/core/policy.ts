@@ -7,19 +7,24 @@ import type { Category, EngineId, Stage } from './model/types';
 // public/managed_schema.json と項目をそろえる。
 
 const categoryEnum = z.enum(ALL_CATEGORIES as [Category, ...Category[]]);
+/**
+ * 分類の一覧。廃止した「組織指定語」（orgTerm。組織辞書とともに廃止）が古いポリシーに残っていても、
+ * ポリシー全体を不正扱いにして出力を止めないよう、その値だけを捨てて読む
+ */
+const categoryList = z
+  .array(z.union([categoryEnum, z.literal('orgTerm')]))
+  .transform((list) => list.filter((c): c is Category => c !== 'orgTerm'));
 
 export const PolicySchema = z.object({
   version: z.string().min(1),
   name: z.string().optional(),
   expiresAt: z.string().optional(),
   allowedOrigins: z.array(z.string()).optional(),
-  prohibitedCategories: z.array(categoryEnum).optional(),
+  prohibitedCategories: categoryList.optional(),
   minStage: z.enum(['A', 'B']).optional(),
   minProfile: z.array(z.enum(['rule', 'ner', 'nano'])).optional(),
   /** 利用者が解除（そのまま残す）できない分類 */
-  lockedCategories: z.array(categoryEnum).optional(),
-  orgTerms: z.array(z.object({ term: z.string().min(1), label: z.string().optional() })).optional(),
-  prohibitedPatterns: z.array(z.string()).optional(),
+  lockedCategories: categoryList.optional(),
   requireConditions: z.boolean().optional(),
   contact: z.string().optional(),
   /** 文章を含まない利用記録を組織のサーバーへ送る（SERVER_DESIGN.md §3-1） */
@@ -47,8 +52,6 @@ export type ResolvedPolicy =
       locked: Category[];
       minStage: Stage;
       minProfile: EngineId[];
-      orgTerms: { term: string; label?: string }[];
-      patterns: RegExp[];
       requireConditions: boolean;
       contact?: string;
       reporting?: Reporting;
@@ -81,14 +84,6 @@ export function resolvePolicy(raw: unknown, nowIso: string): ResolvedPolicy {
   if (!parsed.success) return { status: 'error', reason: '組織ポリシーの形式が正しくありません。' };
   const p = parsed.data;
   if (p.expiresAt && p.expiresAt < nowIso) return { status: 'error', reason: `組織ポリシー（版 ${p.version}）の有効期限が切れています。` };
-  const patterns: RegExp[] = [];
-  for (const source of p.prohibitedPatterns ?? []) {
-    try {
-      patterns.push(new RegExp(source, 'u'));
-    } catch {
-      return { status: 'error', reason: `組織ポリシーの禁止パターン「${source}」を読み込めません。` };
-    }
-  }
   return {
     status: 'active',
     version: p.version,
@@ -98,8 +93,6 @@ export function resolvePolicy(raw: unknown, nowIso: string): ResolvedPolicy {
     locked: [...new Set([...(p.lockedCategories ?? []), ...(p.prohibitedCategories ?? [])])],
     minStage: p.minStage ?? 'A',
     minProfile: p.minProfile ?? ['rule'],
-    orgTerms: p.orgTerms ?? [],
-    patterns,
     requireConditions: p.requireConditions ?? false,
     ...(p.contact ? { contact: p.contact } : {}),
     ...(p.reporting ? { reporting: p.reporting } : {}),

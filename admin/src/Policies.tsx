@@ -21,8 +21,6 @@ type Form = {
   limitSites: boolean;
   sites: string[];
   restrictions: Partial<Record<Category, Restriction>>;
-  orgTerms: string;
-  patterns: string;
   requireConditions: boolean;
   reporting: boolean;
   endpoint: string;
@@ -34,7 +32,7 @@ const EDITABLE = ALL_CATEGORIES.filter((c) => c !== 'credential'); // 認証情�
 
 const emptyForm = (): Form => ({
   version: '', name: '', contact: '', expiresOn: '', minStage: 'A', useNer: false, useNano: false,
-  limitSites: false, sites: AI_SITES.map((s) => s.origin), restrictions: {}, orgTerms: '', patterns: '',
+  limitSites: false, sites: AI_SITES.map((s) => s.origin), restrictions: {},
   requireConditions: false, reporting: true, endpoint: window.location.origin, orgToken: '', department: '',
 });
 
@@ -47,14 +45,11 @@ function toForm(p: Policy): Form {
     name: p.name ?? '', contact: p.contact ?? '', expiresOn: p.expiresAt?.slice(0, 10) ?? '',
     minStage: p.minStage ?? 'A', useNer: p.minProfile?.includes('ner') ?? false, useNano: p.minProfile?.includes('nano') ?? false,
     limitSites: p.allowedOrigins !== undefined, sites: p.allowedOrigins ?? AI_SITES.map((s) => s.origin), restrictions,
-    orgTerms: (p.orgTerms ?? []).map((t) => (t.label ? `${t.term},${t.label}` : t.term)).join('\n'),
-    patterns: (p.prohibitedPatterns ?? []).join('\n'), requireConditions: p.requireConditions ?? false,
+    requireConditions: p.requireConditions ?? false,
     reporting: p.reporting?.enabled ?? false, endpoint: p.reporting?.endpoint ?? window.location.origin,
     orgToken: p.reporting?.orgToken ?? '', department: p.reporting?.department ?? '',
   };
 }
-
-const lines = (s: string) => s.split('\n').map((l) => l.trim()).filter(Boolean);
 
 function toPolicy(f: Form): unknown {
   const of = (r: Restriction) => EDITABLE.filter((c) => f.restrictions[c] === r);
@@ -69,28 +64,15 @@ function toPolicy(f: Form): unknown {
     ...(f.limitSites ? { allowedOrigins: f.sites } : {}),
     ...(of('prohibited').length ? { prohibitedCategories: of('prohibited') } : {}),
     ...(of('locked').length ? { lockedCategories: of('locked') } : {}),
-    ...(lines(f.orgTerms).length ? { orgTerms: lines(f.orgTerms).map((l) => { const [term = '', label] = l.split(','); return { term: term.trim(), ...(label?.trim() ? { label: label.trim() } : {}) }; }) } : {}),
-    ...(lines(f.patterns).length ? { prohibitedPatterns: lines(f.patterns) } : {}),
     requireConditions: f.requireConditions,
     ...(f.reporting ? { reporting: { enabled: true, endpoint: f.endpoint.trim(), orgToken: f.orgToken.trim(), ...(f.department.trim() ? { department: f.department.trim() } : {}) } } : {}),
   };
 }
 
 const PATH_LABEL: Record<string, string> = {
-  version: '版', minStage: '最低段階', expiresAt: '有効期限', prohibitedPatterns: '禁止パターン', orgTerms: '組織の辞書',
+  version: '版', minStage: '最低段階', expiresAt: '有効期限',
   'reporting.endpoint': '記録の送信先', 'reporting.orgToken': '組織トークン', 'reporting.department': '部署',
 };
-
-function badPatterns(f: Form): string[] {
-  return lines(f.patterns).filter((p) => {
-    try {
-      new RegExp(p, 'u');
-      return false;
-    } catch {
-      return true;
-    }
-  });
-}
 
 export function Policies() {
   const [versions, setVersions] = useState<PolicyVersion[]>([]);
@@ -107,7 +89,6 @@ export function Policies() {
   const check = PolicySchema.strict().safeParse(candidate);
   const issues = [
     ...(check.success ? [] : check.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message }))),
-    ...badPatterns(form).map((p) => ({ path: 'prohibitedPatterns', message: `「${p}」は正規表現として読めません` })),
     ...(form.version && !SAFE_TOKEN.test(form.version.trim()) ? [{ path: 'version', message: '英数字と . _ - だけで、32文字までにしてください（利用記録の集計に使うため）' }] : []),
     ...serverIssues,
   ];
@@ -203,14 +184,6 @@ export function Policies() {
               </label>
             ))}
           </div>
-        </fieldset>
-
-        <fieldset>
-          <legend>組織の辞書と禁止パターン</legend>
-          <label className="field"><span>外に出さない語（1行に1語。「語,表示ラベル」で置き換え後の名前を指定）</span>
-            <textarea rows={4} value={form.orgTerms} onChange={(e) => set('orgTerms', e.target.value)} placeholder={'プロジェクトX,社内案件\n青葉家具'} /></label>
-          <label className="field"><span>禁止パターン（1行に1つの正規表現）</span>
-            <textarea rows={3} value={form.patterns} onChange={(e) => set('patterns', e.target.value)} placeholder={'PRJ-\\d{4}'} /></label>
         </fieldset>
 
         <fieldset>

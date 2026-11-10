@@ -10,7 +10,6 @@ export type RecheckInput = {
   candidates: Candidate[];
   outputs: Map<string, string>;
   generatedLabels: string[];
-  orgTerms: CustomTerm[];
   customTerms: CustomTerm[];
 };
 
@@ -20,7 +19,7 @@ export type RecheckInput = {
  * - 手で入れた置換語に新しい氏名や秘密情報がないか
  * - 生成したラベルと同じ文字列が原文由来で紛れていないか
  */
-export function recheck({ masked, candidates, outputs, generatedLabels, orgTerms, customTerms }: RecheckInput): RecheckFinding[] {
+export function recheck({ masked, candidates, outputs, generatedLabels, customTerms }: RecheckInput): RecheckFinding[] {
   const findings: RecheckFinding[] = [];
   const maskedKey = comparisonKey(masked);
 
@@ -51,8 +50,7 @@ export function recheck({ masked, candidates, outputs, generatedLabels, orgTerms
   const generated = new Set([...generatedLabels, ...automatic].map(comparisonKey));
   const fresh = [
     ...detectRules(masked),
-    ...detectTerms(masked, orgTerms, 'orgTerm', TIER.orgDictionary),
-    ...detectTerms(masked, customTerms, 'custom', TIER.customDictionary),
+    ...detectTerms(masked, customTerms, TIER.customDictionary),
   ];
   const seen = new Set<string>();
   for (const s of fresh) {
@@ -61,14 +59,14 @@ export function recheck({ masked, candidates, outputs, generatedLabels, orgTerms
     if (keptKeys.has(key) || generated.has(key) || seen.has(key)) continue;
     if ([...generated].some((g) => g.length > 0 && (g.includes(key) || key.includes(g)))) continue;
     // 準識別子は組合せ評価で扱うので、ここでは直接識別子・秘密・辞書語だけを見る
-    if (!['personName', 'phone', 'email', 'credential', 'creditCard', 'myNumber', 'idNumber', 'bankAccount', 'orgTerm', 'custom', 'address', 'url'].includes(s.category)) continue;
+    if (!['personName', 'phone', 'email', 'credential', 'creditCard', 'myNumber', 'idNumber', 'bankAccount', 'custom', 'address', 'url'].includes(s.category)) continue;
     seen.add(key);
     findings.push({
       kind: 'newDetection',
       text,
       category: s.category,
       message: `加工後の文章に新しい${categoryLabel(s.category)}「${text}」が見つかりました。置換語を確認してください。`,
-      blocking: s.category === 'credential' || s.category === 'orgTerm',
+      blocking: s.category === 'credential',
     });
   }
 
