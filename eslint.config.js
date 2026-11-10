@@ -41,7 +41,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/engines/ner.ts', 'src/infra/assets.ts', 'src/infra/reporting.ts'],
+    files: ['src/engines/ner.ts', 'src/infra/assets.ts', 'src/infra/reporting.ts', 'src/infra/management.ts'],
     rules: { 'no-restricted-globals': 'off' },
   },
   {

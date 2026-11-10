@@ -3,7 +3,8 @@ import { evaluateConditions } from '../core/conditions';
 import { parseCustomTerms } from '../core/detect/dictionary';
 import { nanoAvailability } from '../engines/nano';
 import { log } from '../infra/logger';
-import { loadPrefs, onManagedPolicyChanged, onPendingText, readManagedPolicy, savePrefs, takePendingText } from '../infra/storage';
+import { readPolicyInput, reportStatus, syncManagedPolicy } from '../infra/management';
+import { loadPrefs, onManagedPolicyChanged, onPendingText, savePrefs, takePendingText } from '../infra/storage';
 import { sessionNano, workerClient } from '../infra/analysis-session';
 import { settingsFrom, useStore } from './store';
 
@@ -44,7 +45,16 @@ export function useAnalysis() {
       if (active()) useStore.getState().setNanoStatus(nano);
     })();
     const offPending = onPendingText((t) => useStore.getState().setText(t), () => useStore.getState().sessionId);
-    const offPolicy = onManagedPolicyChanged(() => useStore.getState().policyChanged());
+    // サーバーから配る設定なら、開いたときと管理者が初期設定を変えたときに受け取り直し、適用状況を報告する
+    const syncPolicy = async () => {
+      if ((await syncManagedPolicy()) === 'updated' && active()) useStore.getState().policyChanged();
+      if (active()) void reportStatus();
+    };
+    void syncPolicy();
+    const offPolicy = onManagedPolicyChanged(() => {
+      useStore.getState().policyChanged();
+      void syncPolicy();
+    });
     return () => {
       disposed = true;
       offPending();
@@ -71,13 +81,13 @@ export function useAnalysis() {
         const settings = settingsFrom(prefs, parseCustomTerms(prefs.customText), { labelsOnly });
         const nano = prefs.useNano && text.trim() ? await sessionNano(text) : undefined;
         if (!active()) return;
-        const policyRaw = await readManagedPolicy();
+        const policyInput = await readPolicyInput();
         if (!active()) return;
         const result = await workerClient().call('analyze', {
           text,
           settings,
           ops,
-          policyRaw,
+          policyInput,
           nowIso: new Date().toISOString(),
           conditions,
           ...(nano ? { nano } : {}),

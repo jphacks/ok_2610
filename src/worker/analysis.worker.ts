@@ -1,5 +1,5 @@
 import { analyze, type EngineOutput } from '../core/analyze';
-import { reportingTarget, resolvePolicy, type ResolvedPolicy } from '../core/policy';
+import { reportingTarget, resolvePolicyInput, type ResolvedPolicy } from '../core/policy';
 import { REPORT_ORIGIN } from '../infra/report-origin';
 import { restoreLabels } from '../core/restore';
 import { detectNer, nerAvailability } from '../engines/ner';
@@ -26,6 +26,7 @@ function summarize(policy: ResolvedPolicy): PolicySummary {
   if (policy.status !== 'active') return policy;
   return {
     status: 'active',
+    source: policy.source,
     version: policy.version,
     ...(policy.name ? { name: policy.name } : {}),
     ...(policy.contact ? { contact: policy.contact } : {}),
@@ -39,8 +40,8 @@ function summarize(policy: ResolvedPolicy): PolicySummary {
 async function handle(req: WorkerRequest): Promise<WorkerResponse> {
   switch (req.type) {
     case 'analyze': {
-      const { text, settings, ops, policyRaw, nowIso, conditions, nano } = req.payload;
-      const policy = resolvePolicy(policyRaw, nowIso);
+      const { text, settings, ops, policyInput, nowIso, conditions, nano } = req.payload;
+      const policy = resolvePolicyInput(policyInput, nowIso);
       const profile = new Set([...settings.profile, ...(policy.status === 'active' ? policy.minProfile : [])]);
       const engineOutputs: EngineOutput[] = [];
       if (profile.has('ner') && text.trim()) engineOutputs.push(await nerFor(text));

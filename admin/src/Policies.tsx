@@ -65,7 +65,8 @@ function toPolicy(f: Form): unknown {
     ...(of('prohibited').length ? { prohibitedCategories: of('prohibited') } : {}),
     ...(of('locked').length ? { lockedCategories: of('locked') } : {}),
     requireConditions: f.requireConditions,
-    ...(f.reporting ? { reporting: { enabled: true, endpoint: f.endpoint.trim(), orgToken: f.orgToken.trim(), ...(f.department.trim() ? { department: f.department.trim() } : {}) } } : {}),
+    // 送信先・トークン・部署は MDM で直接配るときだけ使う。サーバーから配るときは初期設定と登録トークンから決まる
+    ...(f.reporting ? { reporting: { enabled: true, ...(f.endpoint.trim() ? { endpoint: f.endpoint.trim() } : {}), ...(f.orgToken.trim() ? { orgToken: f.orgToken.trim() } : {}), ...(f.department.trim() ? { department: f.department.trim() } : {}) } } : {}),
   };
 }
 
@@ -132,7 +133,7 @@ export function Policies() {
 
       <form className="card policy-form" onSubmit={(e) => { e.preventDefault(); void save(); }} aria-labelledby="policies-title">
         <h1 id="policies-title">組織ポリシー</h1>
-        <p className="hint">保存した版は変更できません。編集すると新しい版になります。部署ごとに値を変えるときは、部署ごとに版を作り、MDM の配布先を分けてください。</p>
+        <p className="hint">保存した版は変更できません。編集すると新しい版になります。保存した版は「配布」で部署ごとに配ります。MDM にポリシー本体を直接貼る使い方もできます（下の JSON を書き出す）。</p>
 
         <fieldset>
           <legend>基本</legend>
@@ -191,9 +192,10 @@ export function Policies() {
           <label className="check"><input type="checkbox" checked={form.reporting} onChange={(e) => set('reporting', e.target.checked)} />文章を含まない利用記録をこのサーバーへ送らせる</label>
           {form.reporting && (
             <>
-              <label className="field"><span>送信先</span><input value={form.endpoint} onChange={(e) => set('endpoint', e.target.value)} /></label>
-              <label className="field"><span>組織トークン（「トークン」の画面で発行したもの）</span><input value={form.orgToken} onChange={(e) => set('orgToken', e.target.value)} placeholder="tc_…" spellCheck={false} /></label>
-              <label className="field"><span>部署（英数字と . _ -。部署別の集計に使う）</span><input value={form.department} onChange={(e) => set('department', e.target.value)} placeholder="sales" /></label>
+              <p className="hint">サーバーから配るときは、送信先・トークン・部署は登録トークンの初期設定から決まるので空のままでかまいません。MDM にこのポリシーを直接貼るときだけ入れてください。</p>
+              <label className="field"><span>送信先（MDM で直接配るとき）</span><input value={form.endpoint} onChange={(e) => set('endpoint', e.target.value)} /></label>
+              <label className="field"><span>組織トークン（MDM で直接配るとき。「登録トークン」の画面で発行したもの）</span><input value={form.orgToken} onChange={(e) => set('orgToken', e.target.value)} placeholder="tc_…" spellCheck={false} /></label>
+              <label className="field"><span>部署（MDM で直接配るとき。英数字と . _ -）</span><input value={form.department} onChange={(e) => set('department', e.target.value)} placeholder="sales" /></label>
             </>
           )}
         </fieldset>

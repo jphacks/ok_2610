@@ -1,7 +1,7 @@
 import { MAX_BATCH, SAFE_TOKEN, toHour, UsageBatchSchema, UsageEventSchema, type UsageCore, type UsageEvent } from '../../shared/usage-event';
-import { reportingTarget, resolvePolicy, type Reporting } from '../core/policy';
+import { reportingTarget, type ReportingTarget } from '../core/policy';
+import { readResolvedPolicy } from './management';
 import { REPORT_ORIGIN } from './report-origin';
-import { readManagedPolicy } from './storage';
 
 // 利用記録の送信（SERVER_DESIGN.md §3-3）。外部へ送る経路はこのファイルだけに置く（ESLint の例外）。
 // 送るのは shared/usage-event.ts のスキーマを通った記録だけ。文章・候補の文字列・対応表は扱わない。
@@ -11,10 +11,10 @@ const LAST_SENT_KEY = 'usageLastSent';
 /** 送れない間に溜める上限。超えたら古いものから捨てる */
 const QUEUE_MAX = 500;
 
-type Target = { reporting: Reporting; policyVersion: string | null };
+type Target = { reporting: ReportingTarget; policyVersion: string | null };
 
 async function currentTarget(now: Date): Promise<Target | null> {
-  const policy = resolvePolicy(await readManagedPolicy(), now.toISOString());
+  const policy = await readResolvedPolicy(now);
   const reporting = reportingTarget(policy, REPORT_ORIGIN);
   if (!reporting || policy.status !== 'active') return null;
   return { reporting, policyVersion: SAFE_TOKEN.test(policy.version) ? policy.version : null };
