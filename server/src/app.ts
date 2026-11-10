@@ -170,7 +170,7 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
     const body = (await readJson(c)) as { policy?: unknown } | undefined;
     const parsed = PolicySchema.strict().safeParse(body?.policy);
     if (!parsed.success) return c.json({ issues: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) }, 400);
-    // 拡張と同じ解釈で読めるか（禁止パターンの正規表現・有効期限）まで確かめてから保存する
+    // 拡張と同じ解釈で読めるか（有効期限など）まで確かめてから保存する
     const resolved = resolvePolicy(parsed.data, iso());
     if (resolved.status === 'error') return c.json({ issues: [{ path: '', message: resolved.reason }] }, 400);
     const admin = c.get('admin');

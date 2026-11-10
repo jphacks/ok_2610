@@ -1,6 +1,6 @@
 import { classifyDateRole, isInExample } from './context/roles';
 import { makeLabelAllocator, resolveEntities } from './context/entities';
-import { detectPatterns, detectTerms } from './detect/dictionary';
+import { detectTerms } from './detect/dictionary';
 import { mergeSpans, type MergedSpan } from './detect/merge';
 import { linkReadings, readingSpans } from './detect/furigana';
 import { propagateMentions } from './detect/propagate';
@@ -212,11 +212,7 @@ export async function analyze(input: AnalyzeInput): Promise<AnalysisResult> {
   const ruleSpans = detectRules(scope);
   engines[0]!.spanCount = ruleSpans.length;
   spans.push(...ruleSpans);
-  spans.push(...detectTerms(scope, settings.customTerms, 'custom', TIER.customDictionary));
-  if (policy.status === 'active') {
-    spans.push(...detectTerms(scope, policy.orgTerms, 'orgTerm', TIER.orgDictionary));
-    spans.push(...detectPatterns(scope, policy.patterns, TIER.orgDictionary));
-  }
+  spans.push(...detectTerms(scope, settings.customTerms, TIER.customDictionary));
 
   let analysisFailed = false;
   const nanoRoles = new Map<string, Role>();
@@ -277,7 +273,6 @@ export async function analyze(input: AnalyzeInput): Promise<AnalysisResult> {
     candidates: current.candidates,
     outputs: rendered.outputs,
     generatedLabels: Object.keys(rendered.restoreMap),
-    orgTerms: policy.status === 'active' ? policy.orgTerms : [],
     customTerms: settings.customTerms,
   });
 

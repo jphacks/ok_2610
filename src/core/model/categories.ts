@@ -38,7 +38,6 @@ export const CATEGORY_INFO: Record<Category, CategoryInfo> = {
   credential: { label: '認証情報', group: 'secret' },
   confidential: { label: '機密情報', group: 'secret' },
   custom: { label: '指定語', group: 'custom' },
-  orgTerm: { label: '組織指定語', group: 'custom' },
 };
 
 export const ALL_CATEGORIES = Object.keys(CATEGORY_INFO) as Category[];

@@ -30,9 +30,8 @@ export type Category =
   | 'sensitive'
   | 'credential'
   | 'confidential'
-  // 利用者・組織が定義
-  | 'custom'
-  | 'orgTerm';
+  // 利用者が定義
+  | 'custom';
 
 export type CategoryGroup = 'direct' | 'quasi' | 'sensitive' | 'secret' | 'custom';
 
@@ -47,7 +46,7 @@ export type Role =
 
 export type SensitiveKind = 'health' | 'disability' | 'family' | 'finance' | 'crime' | 'belief';
 
-export type Source = 'rule' | 'dict' | 'custom' | 'ner' | 'nano' | 'manual';
+export type Source = 'rule' | 'custom' | 'ner' | 'nano' | 'manual';
 
 export type Certainty = '確定' | '推定' | '要確認';
 
@@ -98,7 +97,6 @@ export type Span = {
 export type SpanTier = 0 | 1 | 2 | 3 | 4 | 5;
 export const TIER = {
   certainRule: 0,
-  orgDictionary: 1,
   customDictionary: 2,
   heuristicRule: 3,
   ner: 4,
