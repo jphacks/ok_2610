@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { compareVersions, ManagementBootstrapSchema, TOKEN_PATTERN, type ManagementBootstrap, type PolicyPayload, type PolicySource, type PolicyState } from '../../shared/management';
+import { compareVersions, ManagementBootstrapSchema, TOKEN_PATTERN, type ManagementBootstrap, type PolicyPayload, type PolicySource, type PolicyState, type StopNotice } from '../../shared/management';
 import { SAFE_TOKEN } from '../../shared/usage-event';
 import { ALL_CATEGORIES } from './model/categories';
 import type { Category, EngineId, Stage } from './model/types';
@@ -155,6 +155,8 @@ export type ServerPolicyCheck = {
   payload: PolicyPayload | null;
   /** 手元にあるが、署名・形式が合わない */
   tampered: boolean;
+  /** 署名を確かめた「止める」知らせ（すぐ止める設定の組織が、失効・配布の取り下げのときに返す）。なければ null */
+  stop: StopNotice | null;
   /** 初期設定の登録トークンの SHA-256（16進） */
   tokenHash: string;
   extensionVersion: string;
@@ -163,12 +165,18 @@ export type ServerPolicyCheck = {
 
 /**
  * サーバーから受け取ったポリシーを使ってよいかを決める。使えないときは理由を付けて止める（個人設定へ弱めない）。
- * 状態は管理画面の適用状況にも使う（missing・invalid・expired・outdated）。
+ * 状態は管理画面の適用状況にも使う（missing・invalid・expired・outdated・stopped）。
  */
 export function serverPolicyInput(c: ServerPolicyCheck): PolicyInput {
   const error = (state: Exclude<PolicyState, 'active'>, reason: string): PolicyInput => ({ kind: 'error', source: 'server', state, reason });
   if (!c.buildOrigin || new URL(c.bootstrap.endpoint).origin !== c.buildOrigin) {
     return error('invalid', '組織の管理サーバーが、この版の拡張で許可した送信先と一致しません。管理者に連絡してください。');
+  }
+  // 宛先が今の登録トークンと合う知らせだけを使う（トークンを貼り替えれば、新しいトークンで受け取り直す）
+  if (c.stop && c.stop.tokenHash === c.tokenHash) {
+    return error('stopped', c.stop.reason === 'revoked'
+      ? '管理者がこの端末の登録を止めたため、組織ポリシーを使えません。管理者に連絡してください。'
+      : '管理者がこの部署への組織ポリシーの配布を止めたため、使えません。管理者に連絡してください。');
   }
   if (c.tampered) return error('invalid', '保存されている組織ポリシーの署名を確かめられません。ネットワークにつないで、サイドパネルを開き直してください。');
   const p = c.payload;

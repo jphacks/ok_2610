@@ -58,4 +58,5 @@ export const POLICY_ERROR_LABEL: Record<Exclude<PolicyState, 'active'>, string> 
   expired: 'ポリシー期限切れ',
   missing: 'ポリシー未取得',
   outdated: '拡張の更新が必要',
+  stopped: '管理者が停止',
 };

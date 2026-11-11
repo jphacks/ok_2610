@@ -14,9 +14,13 @@ export function Tokens() {
   const [issued, setIssued] = useState<IssuedToken | null>(null);
   const [confirming, setConfirming] = useState<number | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [immediateStop, setImmediateStop] = useState(false);
 
   const refresh = () => api.tokens().then(setTokens).catch(() => setTokens([]));
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+    void api.settings().then((s) => setImmediateStop(s.immediateStop)).catch(() => undefined);
+  }, []);
 
   const dept = department.trim();
   const badDept = dept !== '' && !SAFE.test(dept);
@@ -86,7 +90,9 @@ export function Tokens() {
                   <td className="row-action">
                     {!t.revokedAt && (confirming === t.id ? (
                       <>
-                        <span>このトークンの端末は新しい版を受け取れず、記録も送れなくなります。</span>
+                        <span>{immediateStop
+                          ? 'このトークンの端末は、次にサイドパネルを開いたときに止まります（「すぐ止める」がオン）。'
+                          : 'このトークンの端末は新しい版を受け取れず、記録も送れなくなります。保存済みの版は最長8日使われます。'}</span>
                         <button type="button" onClick={() => setConfirming(null)}>キャンセル</button>
                         <button type="button" className="danger" onClick={() => void revoke(t.id)}>失効する</button>
                       </>

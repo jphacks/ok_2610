@@ -4,7 +4,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { cors } from 'hono/cors';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
-import { base64UrlEncode, DeviceStatusSchema, PolicyPayloadSchema, TOKEN_PATTERN, type PolicyPayload } from '../../shared/management';
+import { base64UrlEncode, DeviceStatusSchema, PolicyPayloadSchema, StopNoticeSchema, TOKEN_PATTERN, type PolicyPayload } from '../../shared/management';
 import { SAFE_TOKEN, UsageBatchSchema } from '../../shared/usage-event';
 import { PolicySchema, resolvePolicy } from '../../src/core/policy';
 import { computeCoverage } from './coverage';
@@ -59,6 +59,7 @@ const AssignmentSchema = z.strictObject({
   policyId: z.number().int().positive(),
   minExtensionVersion: z.string().regex(/^\d+\.\d+\.\d+$/).nullable().optional(),
 });
+const SettingsSchema = z.strictObject({ immediateStop: z.boolean() });
 const roleFields = {
   role: z.enum(ROLES),
   department: department.nullable().optional(),
@@ -128,6 +129,19 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
     return db.one<Token>('SELECT id, org_id, department, token_hash FROM org_tokens WHERE token_hash = $1 AND revoked_at IS NULL', [sha256(bearer)]);
   }
 
+  /** 失効したものも含めて探す。「すぐ止める」設定の組織で、失効したトークンの端末に止める知らせを返すため */
+  async function tokenWithRevoked(c: Context): Promise<(Token & { revoked: boolean }) | undefined> {
+    const bearer = c.req.header('authorization')?.match(/^Bearer (\S+)$/)?.[1];
+    if (!bearer || !TOKEN_PATTERN.test(bearer)) return undefined;
+    const row = await db.one<Token & { revoked_at: string | null }>('SELECT id, org_id, department, token_hash, revoked_at FROM org_tokens WHERE token_hash = $1', [sha256(bearer)]);
+    return row ? { id: row.id, org_id: row.org_id, department: row.department, token_hash: row.token_hash, revoked: row.revoked_at !== null } : undefined;
+  }
+
+  async function immediateStop(orgId: number): Promise<boolean> {
+    const row = await db.one<{ immediate_stop: boolean }>('SELECT immediate_stop FROM organizations WHERE id = $1', [orgId]);
+    return Boolean(row?.immediate_stop);
+  }
+
   app.post('/v1/events', bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.body(null, 413) }), async (c) => {
     const token = await tokenOf(c);
     if (!token) return c.body(null, 401);
@@ -178,11 +192,26 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
   }
 
   app.get('/v1/policy', async (c) => {
-    const token = await tokenOf(c);
+    const token = await tokenWithRevoked(c);
     if (!token) return c.body(null, 401);
     if (rateLimited(token.id, 'policy')) return c.body(null, 429);
-    const payload = await policyPayload(token);
-    if (!payload) return c.body(null, 404);
+    const payload = token.revoked ? null : await policyPayload(token);
+    if (!payload) {
+      // 既定では、失効は 401・配布なしは 404 を返し、端末は手元の版を期限まで使う。
+      // 「すぐ止める」設定では、署名付きの知らせを 410 で返し、端末は受け取ったその場で止まる
+      if (!(await immediateStop(token.org_id))) return c.body(null, token.revoked ? 401 : 404);
+      const notice = StopNoticeSchema.parse({
+        schemaVersion: 1,
+        kind: 'stop',
+        orgId: Number(token.org_id),
+        tokenHash: token.token_hash,
+        reason: token.revoked ? 'revoked' : 'unassigned',
+        issuedAt: iso(),
+      });
+      const bytes = new TextEncoder().encode(JSON.stringify(notice));
+      c.header('cache-control', 'no-store');
+      return c.json({ payload: base64UrlEncode(bytes), signature: base64UrlEncode(signer.sign(bytes)) }, 410);
+    }
     const bytes = new TextEncoder().encode(JSON.stringify(payload));
     const etag = `"${sha256(Buffer.from(bytes).toString('base64'))}"`;
     c.header('etag', etag);
@@ -380,6 +409,20 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
       return n;
     });
     return c.body(null, removed ? 204 : 404);
+  });
+
+  // ---- 組織の設定（すぐ止める） ---------------------------------------------------------------
+  app.get('/admin/settings', atLeast('viewer'), async (c) => c.json({ immediateStop: await immediateStop(c.get('admin').orgId) }));
+
+  app.put('/admin/settings', atLeast('policy_admin'), async (c) => {
+    const parsed = SettingsSchema.safeParse(await readJson(c));
+    if (!parsed.success) return c.body(null, 400);
+    const admin = c.get('admin');
+    await db.tx(async (t) => {
+      await t.run('UPDATE organizations SET immediate_stop = $1 WHERE id = $2', [parsed.data.immediateStop, admin.orgId]);
+      await audit(admin, 'settings.immediateStop', { immediateStop: parsed.data.immediateStop }, t);
+    });
+    return c.body(null, 204);
   });
 
   // ---- 登録トークン ------------------------------------------------------------------------

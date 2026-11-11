@@ -68,6 +68,9 @@ export type SetupState = {
   complete: boolean;
 };
 
+/** 組織の設定。immediateStop は「すぐ止める」（SERVER_DESIGN.md §12-8） */
+export type Settings = { immediateStop: boolean };
+
 const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) });
 
 export const api = {
@@ -87,6 +90,8 @@ export const api = {
   tokens: () => call<Token[]>('/admin/tokens'),
   createToken: (label: string, department: string | null) => call<IssuedToken>('/admin/tokens', json('POST', { label, department })),
   revokeToken: (id: number) => call<void>(`/admin/tokens/${id}`, { method: 'DELETE' }),
+  settings: () => call<Settings>('/admin/settings'),
+  saveSettings: (s: Settings) => call<void>('/admin/settings', json('PUT', s)),
   admins: () => call<AdminAccount[]>('/admin/admins'),
   createAdmin: (a: { email: string; password: string; role: Role; department: string | null }) => call<{ id: number }>('/admin/admins', json('POST', a)),
   updateAdmin: (id: number, a: { role: Role; department: string | null }) => call<void>(`/admin/admins/${id}`, json('PATCH', a)),
