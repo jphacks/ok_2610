@@ -24,27 +24,24 @@ export type Coverage = {
   extensionVersions: { version: string; count: number }[];
 };
 
-type Row = Record<string, string | number | null>;
 
 const emptyStates = (): Record<PolicyState, number> => Object.fromEntries(POLICY_STATES.map((s) => [s, 0])) as Record<PolicyState, number>;
 
-export function computeCoverage(db: Db, orgId: number, q: { today: string; department?: string }): Coverage {
+export async function computeCoverage(db: Db, orgId: number, q: { today: string; department?: string }): Promise<Coverage> {
   const start = new Date(`${q.today}T00:00:00Z`);
   start.setUTCDate(start.getUTCDate() - (COVERAGE_DAYS - 1));
   const from = start.toISOString().slice(0, 10);
   const dept = q.department ?? null;
 
   const assigned = new Map<string, string>();
-  for (const r of db.prepare('SELECT a.department, p.version FROM policy_assignments a JOIN policies p ON p.id = a.policy_id WHERE a.org_id = ?').all(orgId) as Row[]) {
+  for (const r of await db.query('SELECT a.department, p.version FROM policy_assignments a JOIN policies p ON p.id = a.policy_id WHERE a.org_id = $1', [orgId])) {
     assigned.set(String(r.department), String(r.version));
   }
   const versionFor = (d: string | null) => assigned.get(d ?? '') ?? assigned.get('') ?? null;
 
-  const rows = db
-    .prepare(`SELECT department, policy_state, policy_version, extension_version, COUNT(*) AS n FROM device_status
-      WHERE org_id = ? AND reported_day >= ? AND reported_day <= ?${dept ? ' AND department = ?' : ''}
-      GROUP BY department, policy_state, policy_version, extension_version`)
-    .all(...(dept ? [orgId, from, q.today, dept] : [orgId, from, q.today])) as Row[];
+  const rows = await db.query(`SELECT department, policy_state, policy_version, extension_version, COUNT(*) AS n FROM device_status
+      WHERE org_id = $1 AND reported_day >= $2 AND reported_day <= $3${dept ? ' AND department = $4' : ''}
+      GROUP BY department, policy_state, policy_version, extension_version`, dept ? [orgId, from, q.today, dept] : [orgId, from, q.today]);
 
   const byDept = new Map<string, Coverage['departments'][number]>();
   const byExt = new Map<string, number>();

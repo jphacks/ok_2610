@@ -1,0 +1,28 @@
+# 管理サーバーを Render の無料プランに置く設定（SERVER_DESIGN.md §14）。
+# データは Neon（無料の PostgreSQL）に置き、Render のディスクには何も残さない。
+# sync: false の値は、Render の画面で作るときに入力する（このファイルには書かない）。
+services:
+  - type: web
+    name: text-cleaner-admin
+    runtime: node
+    plan: free
+    region: singapore
+    # tsx などの開発用パッケージも使うので、--include=dev で入れる
+    buildCommand: npm ci --include=dev && npm run admin:build
+    startCommand: npm run server
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.23.4
+      - key: SECURE_COOKIES
+        value: "1"
+      - key: DATABASE_URL
+        sync: false
+      - key: POLICY_SIGNING_KEY
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ORG_NAME
+        sync: false
