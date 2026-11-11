@@ -209,21 +209,21 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
   });
 
   // ---- 管理者のログイン -------------------------------------------------------------------
-  const failures = new Map<string, number[]>();
-
+  // 失敗は DB に数える（Vercel のように要求ごとに別のサーバーが動くことがあっても、5回で止まるように）
   app.post('/admin/session', async (c) => {
     const parsed = LoginSchema.safeParse(await readJson(c));
     if (!parsed.success) return c.body(null, 400);
     const email = parsed.data.email.toLowerCase();
     const t = now().getTime();
-    const recentFailures = (failures.get(email) ?? []).filter((f) => t - f < 15 * 60_000);
-    if (recentFailures.length >= LOGIN_FAILURES) return c.body(null, 429);
+    const since = new Date(t - 15 * 60_000).toISOString();
+    const recent = await db.one<{ n: string }>('SELECT COUNT(*) AS n FROM login_failures WHERE email = $1 AND failed_at > $2', [email, since]);
+    if (Number(recent?.n ?? 0) >= LOGIN_FAILURES) return c.body(null, 429);
     const admin = await db.one<{ id: number; password_hash: string }>('SELECT id, password_hash FROM admins WHERE email = $1 AND disabled_at IS NULL', [email]);
     if (!admin || !(await verifyPassword(parsed.data.password, admin.password_hash))) {
-      failures.set(email, [...recentFailures, t]);
+      await db.run('INSERT INTO login_failures (email, failed_at) VALUES ($1, $2)', [email, new Date(t).toISOString()]);
       return c.body(null, 401);
     }
-    failures.delete(email);
+    await db.run('DELETE FROM login_failures WHERE email = $1', [email]);
     const sessionId = newSessionId();
     const expires = new Date(t + SESSION_HOURS * 60 * 60_000);
     await db.run('INSERT INTO admin_sessions (id_hash, admin_id, expires_at) VALUES ($1, $2, $3)', [sha256(sessionId), admin.id, expires.toISOString()]);

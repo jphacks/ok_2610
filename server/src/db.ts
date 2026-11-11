@@ -1,4 +1,4 @@
-import { PGlite } from '@electric-sql/pglite';
+import type { PGlite } from '@electric-sql/pglite';
 import pg from 'pg';
 
 // 管理サーバーの DB（SERVER_DESIGN.md §5・§12・§14）。PostgreSQL を使う。
@@ -62,9 +62,10 @@ function postgres(url: string): Db {
   return db;
 }
 
-/** PGlite（試験・手元の開発）。dataDir がなければメモリに置く */
-function pglite(dataDir: string | undefined): Db {
-  const lite = new PGlite(dataDir);
+/** PGlite（試験・手元の開発）。dataDir がなければメモリに置く。クラウド（Vercel）の関数には PGlite を入れないので、使うときだけ読み込む */
+async function pglite(dataDir: string | undefined): Promise<Db> {
+  const { PGlite: Lite } = await import('@electric-sql/pglite');
+  const lite: PGlite = new Lite(dataDir);
   type Q = { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[]; affectedRows?: number }> };
   const exec = (q: Q): Exec => ({
     query: async (sql, params) => {
@@ -201,24 +202,46 @@ CREATE TABLE departments (
 );
 `;
 
+/**
+ * 2: 管理者のログインの失敗（5回で15分止める）。Vercel ではサーバーが要求ごとに別々に動くことがあり、
+ * メモリに数えると止まらないので DB に置く。メールアドレスと時刻だけを持ち、1日たてば消す
+ */
+const V2 = `
+CREATE TABLE login_failures (
+  email TEXT NOT NULL,
+  failed_at TEXT NOT NULL
+);
+CREATE INDEX login_failures_email_at ON login_failures (email, failed_at)
+`;
+
 /** 試験で適用の順番を確かめるために公開する */
-export const MIGRATIONS = [V1];
+export const MIGRATIONS = [V1, V2];
+
+/** マイグレーションを同時に流さないための鍵（PostgreSQL の advisory lock の番号） */
+const MIGRATION_LOCK = 2610;
 
 /**
  * DB を開いてマイグレーションを流す。url があれば PostgreSQL、なければ PGlite（dataDir がなければメモリ）。
  */
 export async function openDb(opts: { url?: string | undefined; dataDir?: string | undefined } = {}): Promise<Db> {
-  const db = opts.url ? postgres(opts.url) : pglite(opts.dataDir);
+  const db = opts.url ? postgres(opts.url) : await pglite(opts.dataDir);
   await migrate(db);
   return db;
 }
 
+// Vercel では、眠りから覚めた関数がいくつも同時に起動することがある。advisory lock で1つずつ流し、
+// 鍵を取ったあとで、ほかが先に流していないかを確かめ直す
 async function migrate(db: Db): Promise<void> {
-  await db.run('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
+  await db.tx(async (t) => {
+    await t.query('SELECT pg_advisory_xact_lock($1)', [MIGRATION_LOCK]);
+    await t.run('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
+  });
   const done = new Set((await db.query<{ version: number }>('SELECT version FROM schema_migrations')).map((r) => Number(r.version)));
   for (let v = 1; v <= MIGRATIONS.length; v++) {
     if (done.has(v)) continue;
     await db.tx(async (t) => {
+      await t.query('SELECT pg_advisory_xact_lock($1)', [MIGRATION_LOCK]);
+      if (await t.one('SELECT 1 FROM schema_migrations WHERE version = $1', [v])) return;
       for (const statement of MIGRATIONS[v - 1]!.split(';').map((s) => s.trim()).filter((s) => s && !/^--[^\n]*$/.test(s))) {
         await t.run(statement);
       }
@@ -236,5 +259,7 @@ export async function deleteExpiredEvents(db: Db, now: Date): Promise<number> {
   const events = await db.run('DELETE FROM usage_events WHERE occurred_hour < $1', [cutoff]);
   const statusCutoff = new Date(now.getTime() - DEVICE_STATUS_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const statuses = await db.run('DELETE FROM device_status WHERE reported_day < $1', [statusCutoff]);
+  // ログインの失敗は15分しか使わないので、1日たったものを消す（件数には数えない）
+  await db.run('DELETE FROM login_failures WHERE failed_at < $1', [new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()]);
   return events + statuses;
 }

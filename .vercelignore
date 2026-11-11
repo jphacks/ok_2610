@@ -1,0 +1,15 @@
+# Vercel に送らないもの（npx vercel で手元のフォルダから置くとき）。管理画面と管理サーバーのビルドに要らないもの・手元のデータ
+.output/
+.wxt/
+.venv-ner/
+public/models/
+public/ort/
+server/data/
+admin/dist/
+test-results/
+playwright-report/
+*.log
+.env
+.env.*
+.claude/
+.vercel/

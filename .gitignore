@@ -16,3 +16,6 @@ public/ort/
 # 利用記録サーバーの DB と管理画面のビルド
 server/data/
 admin/dist/
+
+# Vercel に置くための出力（npm run vercel:build）と、npx vercel が作るプロジェクトの紐付け
+.vercel/

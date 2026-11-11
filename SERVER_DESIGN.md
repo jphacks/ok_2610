@@ -288,9 +288,10 @@ npm run build:demo                      # WXT_REPORT_ORIGIN=http://localhost:878
 | `DB_PATH` | `server/data/pglite` | `DATABASE_URL` がないときの手元のデータの置き場所（PGlite。Git に入れない） |
 | `EXTENSION_IDS` | なし（`chrome-extension://` をすべて許す） | 記録を受け付ける拡張の ID（カンマ区切り）。本番では指定する |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ORG_NAME` | — | 管理者がまだいないときだけ、最初の組織と管理者を作る |
-| `SECURE_COOKIES` | なし | HTTPS で動かすときに `1` |
-| `PUBLIC_ORIGIN` | 要求の URL のオリジン | 初期設定に入れる管理サーバーの URL。逆プロキシの後ろで動かすときに指定する |
+| `SECURE_COOKIES` | なし | HTTPS で動かすときに `1`（Vercel では指定しなくても有効） |
+| `PUBLIC_ORIGIN` | Vercel・Render が入れる公開 URL、なければ要求の URL のオリジン | 初期設定に入れる管理サーバーの URL。逆プロキシの後ろで動かすときに指定する |
 | `POLICY_SIGNING_KEY` | なし | ポリシーの署名鍵（Ed25519、PKCS#8 の PEM）。本番は KMS などから注入する |
+| `CRON_SECRET` | なし | Vercel の Cron が保存期間の掃除（`/cron/purge`）を呼ぶときの合言葉。Vercel では必須（§14） |
 | `SIGNING_KEY_PATH` | `server/data/policy-signing-key.pem` | `POLICY_SIGNING_KEY` がないときに読む鍵。なければ作る（開発用。Git に入れない） |
 
 署名鍵を変えると、配った初期設定の公開鍵と合わなくなり、端末は新しい版を受け取れなくなる（手元の版を期限まで使ったあと止まる）。鍵を変えたら初期設定を配り直す。
@@ -419,17 +420,19 @@ Chrome 拡張 ──GET /v1/policy（ETag 付き）─────────�
 
 ---
 
-## 14. 無料のクラウドに置く（2026年11月11日 実装）
+## 14. 無料のクラウドに置く（2026年11月11日 実装、12日 Vercel に変更）
 
 費用をかけず、ウェブストアにも出さずに、誰でも開ける URL で管理画面にログインして管理できるようにする。実際の運用はしない（試せる状態にする）。
 
 | 役目 | 置き場所（無料プラン） |
 |---|---|
-| 管理サーバーと管理画面 | Render の Web Service（`render.yaml`） |
+| 管理画面と管理サーバー | Vercel（Hobby）。管理画面のファイルはそのまま配り、API は関数（Vercel Functions）で動かす |
 | データ | Neon の PostgreSQL（`DATABASE_URL`） |
-| ポリシーの署名鍵 | Render の環境変数（`POLICY_SIGNING_KEY`）。Neon には置かない |
+| ポリシーの署名鍵 | Vercel の環境変数（`POLICY_SIGNING_KEY`）。Neon には置かない |
 
-無料のサーバーは眠ったり再起動したりするとディスクが消えるので、サーバーのディスクには何も残さない。DB は PostgreSQL にした（手元の開発と試験は、WASM で動く PostgreSQL の PGlite を使い、SQL は1種類）。
+- **眠らない**：Vercel の関数は要求が来たときに動く仕組みで、Render の無料プランのように「15分で眠り、次に開くと1分待つ」ことがない。Neon は5分使わないと止まるが、次の問い合わせで1秒かからずに戻る。
+- **サーバーのディスクには何も残さない**：関数のディスクは読み取り専用で、終われば消える。データはすべて Neon に置く。手元の開発と試験は、WASM で動く PostgreSQL の PGlite を使う（SQL は1種類）。
+- **ふつうのサーバーとしても動く**：`npm run server`（`server/src/main.ts`）は今までどおり。Vercel では `server/src/vercel.ts` を入口にする。準備（DB・最初の管理者・アプリの組み立て）は `server/src/prepare.ts` で共通。
 
 ### 14-1. サーバー（Neon）に置かれるもの・置かれないもの
 
@@ -438,68 +441,84 @@ Chrome 拡張 ──GET /v1/policy（ETag 付き）─────────�
 | 組織 | 組織名、相談先、選んだひな形、はじめての設定の進み具合 |
 | 管理者 | メールアドレス、パスワードのハッシュ（scrypt）、役割、担当部署 |
 | セッション・登録トークン | ハッシュ（SHA-256）だけ。平文は持たない |
+| ログインの失敗 | 管理画面に入力されたメールアドレスと時刻（5回で15分止めるため。1日で消す） |
 | ポリシー・配布・部署 | 段階・情報の種類ごとの扱い・名前・相談先、部署名 |
 | 利用記録 | 種類ごとの件数・出力先・1時間単位の時刻など（§1-2） |
 | 適用状況 | 乱数の番号・日付・拡張とポリシーの版・状態（§12-4） |
 | 変更履歴 | 誰がいつ何を変えたか（トークンの平文・パスワードは残さない） |
 
-**置かれないもの**：社員が貼った原文、加工した文章、候補の文字列、元に戻すための対応表、カスタム辞書の語、社員のアカウント。これらは拡張の外へ出す経路がない（§1-1、ARCHITECTURE.md §13）。DB をクラウドに置いても、この境界は変わらない。
+**置かれないもの**：社員が貼った原文、加工した文章、候補の文字列、元に戻すための対応表、カスタム辞書の語、社員のアカウント。これらは拡張の外へ出す経路がない（§1-1、ARCHITECTURE.md §13）。置き場所を Vercel や Neon にしても、この境界は変わらない。管理サーバーは、受け取った記録の本文を Vercel の関数のログにも書き出さない（§4）。
 
-### 14-2. 置き方
+### 14-2. 置き方（GitHub とつながない）
 
-1. **Neon**：プロジェクトを作り、接続文字列（`postgresql://…?sslmode=require`）を控える。
+手元のフォルダから Vercel の CLI（`npx vercel`）で送る。GitHub のアカウントや組織の許可は要らない。秘密の値はリポジトリに入れず、すべて Vercel の画面の環境変数で渡す。
+
+1. **Neon**：アカウントを作り（カード不要）、プロジェクトを作る。
+   - 地域は **AWS US East 1 (N. Virginia)** にする。Vercel の関数は既定で米国東部（`iad1`）で動くので、DB を近くに置く（1回の画面表示で何度も DB に問い合わせるため、関数と DB の距離がいちばん効く）。
+   - 「Connect」で、**Connection pooling を有効にした**接続文字列（ホスト名に `-pooler` が付く。`postgresql://…?sslmode=require`）を控える。関数はいくつも同時に動くことがあるので、プールを通す。
 2. **署名鍵**：手元で `npm run server:keygen` を実行し、出てきた1行を控える（秘密の値）。
-3. **Render**：次のどちらかで作る。
-   - **GitHub とつながない（おすすめ）**：リポジトリは公開なので、URL を貼るだけで作れる。GitHub の組織に許可をもらう必要がない。手順は §14-2-1。
-   - **GitHub とつなぐ**：このリポジトリをつなぎ、「Blueprint」で `render.yaml` を読み込む。`DATABASE_URL`・`POLICY_SIGNING_KEY`・`ADMIN_EMAIL`・`ADMIN_PASSWORD`（12文字以上）・`ORG_NAME` を入れて作る。組織のリポジトリなので、組織側の許可が要ることがある。
-4. 起動したら `https://<サービス名>.onrender.com` を開き、`ADMIN_EMAIL` でログインする。はじめての設定（§13）が始まる。
-5. 拡張で試すときは、その URL を入れてビルドする（`WXT_REPORT_ORIGIN=https://<サービス名>.onrender.com npm run build`）。
-
-- 拡張に配る初期設定の送信先は、Render が入れる `RENDER_EXTERNAL_URL` から自動で決まる（`PUBLIC_ORIGIN` で上書きできる）。
-- `DATABASE_URL` を使うときに `POLICY_SIGNING_KEY` がなければ、起動を止める（鍵をファイルに置くと起動のたびに変わり、配った初期設定と合わなくなるため）。
-- 誰でも URL を開けるので、管理者のパスワードは長くする。ログインは5回間違えると15分止まる。
-
-#### 14-2-1. GitHub とつながずに Render に置く
-
-Render の「Public Git Repository」を使う。GitHub のアカウントとはつながず、公開リポジトリの URL から取り込む（[Render の Web Services の説明](https://render.com/docs/web-services)）。秘密の値はリポジトリに入れず、すべて Render の画面の環境変数で渡す。
-
-1. Render の画面で「New」→「Web Service」を選び、「Public Git Repository」に `https://github.com/jphacks/ok_2610` を貼る。
-2. 次の値を入れる（`render.yaml` に書いてある値と同じ）。
-
-   | 項目 | 値 |
-   |---|---|
-   | Name | 好きな名前（例 `text-cleaner-admin`。URL の一部になる） |
-   | Branch | `main` |
-   | Region | `Singapore`（日本にいちばん近い） |
-   | Runtime | `Node` |
-   | Build Command | `npm ci --include=dev && npm run admin:build` |
-   | Start Command | `npm run server` |
-   | Instance Type | `Free`（選べないときは、無料プランの条件を公式の料金ページで確かめる） |
-   | Health Check Path | `/health`（「Advanced」の中） |
-
-3. 「Environment Variables」に次を入れる。
+3. **Cron の合言葉**：手元で `node -e "console.log(require('node:crypto').randomBytes(24).toString('hex'))"` を実行し、出てきた文字列を控える（秘密の値）。
+4. **Vercel**：アカウントを作る（Hobby。無料）。手元で最新の main にして（`git pull`）、リポジトリの一番上のフォルダで次を実行する。
+   1. `npx vercel login`：ブラウザでログインする。
+   2. `npx vercel`：最初の1回はプロジェクトを作る。質問はおおむね次のとおり（CLI の版で文言が少し違うことがある）。
+      - Set up and deploy? → `Y`
+      - Which scope? → 自分のアカウント
+      - Link to existing project? → `N`
+      - Project name → 好きな名前（例 `tc-admin`。URL の一部になる）
+      - In which directory is your code located? → `./`
+      - 設定を変えるか聞かれたら → `N`（`vercel.json` に書いてある）
+5. **環境変数**：Vercel の画面で、そのプロジェクトの Settings → Environment Variables に次を入れる（Environment は Production。秘密の値は「Sensitive」にする）。
 
    | 名前 | 値 |
    |---|---|
-   | `NODE_VERSION` | `22.23.4` |
-   | `SECURE_COOKIES` | `1` |
-   | `DATABASE_URL` | Neon の接続文字列 |
-   | `POLICY_SIGNING_KEY` | `npm run server:keygen` で作った1行 |
+   | `DATABASE_URL` | 手順1の接続文字列 |
+   | `POLICY_SIGNING_KEY` | 手順2の1行 |
+   | `CRON_SECRET` | 手順3の文字列 |
    | `ADMIN_EMAIL` | 最初の管理者のメールアドレス |
-   | `ADMIN_PASSWORD` | 最初の管理者のパスワード（12文字以上） |
+   | `ADMIN_PASSWORD` | 最初の管理者のパスワード（12文字以上。誰でも URL を開けるので長くする） |
    | `ORG_NAME` | 組織名（あとで「はじめての設定」で変えられる） |
 
-4. 作ると、ビルドと起動が始まる。終わったら、上の手順4から続ける。
+6. **本番に置く**：手元で `npx vercel --prod` を実行する。
+7. `https://<プロジェクト名>.vercel.app` を開き、`ADMIN_EMAIL` でログインする。はじめての設定（§13）が始まる。
+8. 拡張で試すときは、その URL を入れてビルドする（`WXT_REPORT_ORIGIN=https://<プロジェクト名>.vercel.app npm run build`）。
 
-- **更新は手で行う**：GitHub とつないでいないので、main が変わっても自動では入れ直さない。入れ直すときは、Render の画面で「Manual Deploy」を押す。
-- **設定ファイルは読み込まれない**：`render.yaml` は自動では読み込まれない。値を変えたときは、画面と `render.yaml` の両方をそろえる。
-- **公式が想定する使い方とは少し違う**：Render のドキュメントでは、この方法は自分が属していない公開リポジトリを置くためのものとされている（禁止はされていない）。
+- **更新**：main が変わったら、`git pull` してから `npx vercel --prod` をもう一度実行する（GitHub とつないでいないので自動では入れ直さない）。
+- **開く URL**：`npx vercel`（`--prod` なし）で作った試しの URL は、Vercel にログインした本人しか開けない（Vercel の保護）。誰でも開けるのは本番の `https://<プロジェクト名>.vercel.app`。
+- **送るもの**：`npx vercel` は手元のフォルダを送り、Vercel の上で `npm ci` と `npm run vercel:build` を実行する。拡張のビルド結果・NER のモデル・手元のデータ（`server/data/`）・`.env` は `.vercelignore` で送らない。
+- **送信先の自動設定**：拡張に配る初期設定の送信先は、Vercel が入れる本番のドメイン（`VERCEL_PROJECT_PRODUCTION_URL`）から自動で決まる（`PUBLIC_ORIGIN` で上書きできる）。Cookie は Vercel では常に Secure にする。
+- **起動を止める条件**：Vercel で `DATABASE_URL` がないとき、`DATABASE_URL` があって `POLICY_SIGNING_KEY` がないときは、準備をやめて 503 を返す（鍵を置ける場所がなく、起動のたびに鍵が変わってしまうため）。理由は Vercel の Logs に出る。
 
-### 14-3. 無料プランの制約（2026年11月時点の第三者の解説による。使う前に公式の料金ページで確かめる）
+#### 14-2-1. Vercel の上での動き
 
-- Render：15分アクセスがないと眠り、次に開くと表示まで1分ほどかかる。月750時間まで。本番向けではない。Render の無料データベースは30日で消えるので使わない。
-- Neon：容量は 0.5〜1GB。使われないと計算資源が止まり、最初の問い合わせが少し遅くなる。
+| もの | 中身 |
+|---|---|
+| `vercel.json` | 設定の型（Framework は使わない）、`npm ci`、`npm run vercel:build` |
+| `scripts/build-vercel.mjs` | Build Output API の形で `.vercel/output` を作る。`static/` に管理画面、`functions/api.func/` に管理サーバー（esbuild で1ファイルにまとめる。PGlite は入れない）、`config.json` に道順と Cron |
+| 道順 | 管理画面のファイル（`/`・`/assets/…`）があればそれを返し、なければ関数へ回す（`/v1/*`・`/admin/*`・`/health`・`/cron/purge`） |
+| 保存期間の掃除 | Vercel の Cron が1日1回（UTC 18時＝日本時間3時ごろ、無料プランは1時間ほどずれる）`/cron/purge` を呼ぶ。`Authorization: Bearer <CRON_SECRET>` が合わなければ 401 |
+| マイグレーション | 関数の起動ごとに確かめる。いくつも同時に起動しても、PostgreSQL の advisory lock で1つずつ流す |
+| 最初の管理者 | 管理者がいなければ `ADMIN_EMAIL` で作る。同時に起動したほかの関数が先に作っていれば作らない |
+| ログインの失敗 | DB に数える（要求ごとに別の関数が動いても、5回で15分止まる） |
+
+- 拡張からの送信の回数制限（§4。組織トークンごとに毎分600件）は、関数ごとのメモリで数えるので、Vercel ではふつうのサーバーよりゆるくなる。試す用途では問題にしない。
+
+### 14-3. 無料プランの制約（2026年11月12日に公式のページで確かめた）
+
+- **Vercel（Hobby）**：無料。**個人の、商用でない利用に限る**（会社で本当に使うときは有料プランか別の置き場所にする）。関数の呼び出しは月100万回、CPU 時間は月4時間、転送は月100GB まで。超えても課金されず、30日たつまでその機能が止まる。Cron は1日1回まで。関数の最長実行は300秒。
+- **Neon（Free）**：無料・カード不要・期限なし。容量は1プロジェクト 1GB、計算は月 100 CU 時間まで。5分使わないと止まり、次の問い合わせで数百ミリ秒で戻る（データは消えない）。
+- 参考：[Vercel の料金](https://vercel.com/pricing)・[Hobby プラン](https://vercel.com/docs/plans/hobby)・[Neon の料金](https://neon.com/pricing)
 
 ### 14-4. 手元で動かすとき
 
 `DATABASE_URL` を入れなければ、PGlite のデータを `server/data/pglite` に置く（`DB_PATH` で変えられる）。以前の SQLite のファイル（`server/data/text-cleaner.db`）は読み込まない（開発用のデータのため移さない）。
+
+Vercel 用の出力だけを手元で作って確かめるときは `npm run vercel:build`（`.vercel/output` に出る。Git には入れない）。
+
+### 14-5. Render に置くとき（前の案）
+
+`npm run server` をそのまま動かせるので、Render の Web Service にも置ける（`render.yaml`）。ただし無料プランは15分アクセスがないと眠り、次に開くと表示まで1分ほどかかる（[Render の Free の説明](https://render.com/docs/free)）。
+
+- 「New」→「Web Service」→「Public Git Repository」に `https://github.com/jphacks/ok_2610` を貼る（GitHub とつながない。自動の更新はなく、「Manual Deploy」で入れ直す）。
+- Build Command は `npm ci --include=dev && npm run admin:build`、Start Command は `npm run server`、Health Check Path は `/health`、Instance Type は `Free`。
+- 環境変数は §14-2 の表から `CRON_SECRET` を除いたものに、`NODE_VERSION`（`22.23.4`）と `SECURE_COOKIES`（`1`）を足す。保存期間の掃除はサーバーが1日ごとに行う。
+- Neon の地域は Render に合わせて AWS Singapore にする。
