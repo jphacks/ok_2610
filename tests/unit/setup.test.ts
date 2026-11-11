@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { PRESETS, PREVIEW_TEXT, presetOf } from '../../shared/policy-presets';
 import { createApp, createOrganization } from '../../server/src/app';
-import { openDb, type Db } from '../../server/src/db';
+import type { Db } from '../../server/src/db';
+import { emptyDb } from './db-helpers';
 import { resolvePolicy } from '../../src/core/policy';
 import { verifySignedPolicy } from '../../src/infra/policy-signature';
 import { run, settings } from './helpers';
@@ -19,10 +20,10 @@ const json = (body: unknown, method = 'PUT') => ({ method, headers: { 'content-t
 const admin = (path: string, init: RequestInit = {}) => app.request(path, { ...init, headers: { ...(init.headers as Record<string, string>), cookie } });
 type Setup = { organization: { name: string; contact: string | null }; departmentMode: string | null; departments: { code: string; name: string; preset: string }[]; steps: Record<string, boolean>; complete: boolean };
 const setup = async () => (await (await admin('/admin/setup')).json()) as Setup;
-const assignments = () => db.prepare("SELECT a.department, p.version, p.body_json FROM policy_assignments a JOIN policies p ON p.id = a.policy_id ORDER BY a.department").all() as { department: string; version: string; body_json: string }[];
+const assignments = () => db.query<{ department: string; version: string; body_json: string }>("SELECT a.department, p.version, p.body_json FROM policy_assignments a JOIN policies p ON p.id = a.policy_id ORDER BY a.department");
 
 beforeEach(async () => {
-  db = openDb(':memory:');
+  db = await emptyDb();
   app = createApp({ db, now: () => NOW, publicOrigin: 'http://localhost:8787' });
   await createOrganization(db, 'デモ組織', 'owner@example.com', 'correct horse battery staple', NOW);
   const login = await app.request('/admin/session', json({ email: 'owner@example.com', password: 'correct horse battery staple' }, 'POST'));
@@ -51,7 +52,7 @@ describe('はじめての設定', () => {
     await admin('/admin/setup/organization', json({ name: 'デモ株式会社', contact: '情報システム部 内線 1234' }));
     await admin('/admin/setup/rules', json({ preset: 'strictest', collectUsage: true }));
     await admin('/admin/setup/rules', json({ preset: 'strictest', collectUsage: true }));
-    const [a] = assignments();
+    const [a] = await assignments();
     expect(a!.department).toBe('');
     expect(a!.version).toBe('strictest-20261111');
     expect(JSON.parse(a!.body_json)).toEqual({
@@ -63,12 +64,13 @@ describe('はじめての設定', () => {
       prohibitedCategories: ['myNumber', 'bankAccount', 'creditCard'],
       reporting: { enabled: true },
     });
-    expect(db.prepare('SELECT COUNT(*) AS n FROM policies').get()).toEqual({ n: 1 });
+    expect(Number((await db.one<{ n: unknown }>('SELECT COUNT(*) AS n FROM policies'))!.n)).toBe(1);
 
     // 利用記録を集めないにすると、別の版を作って配り直す
     await admin('/admin/setup/rules', json({ preset: 'strictest', collectUsage: false }));
-    expect(assignments()[0]!.version).toBe('strictest-20261111-2');
-    expect(JSON.parse(assignments()[0]!.body_json).reporting).toBeUndefined();
+    const [b] = await assignments();
+    expect(b!.version).toBe('strictest-20261111-2');
+    expect(JSON.parse(b!.body_json).reporting).toBeUndefined();
   });
 
   test('部署に管理用の名前を自動で付けて、部署ごとのルールを配る。拡張は署名付きで受け取れる', async () => {
@@ -79,7 +81,7 @@ describe('はじめての設定', () => {
       { code: 'dept-01', name: '営業部', preset: 'standard' },
       { code: 'dept-02', name: '人事部', preset: 'strictest' },
     ]);
-    expect(assignments().map((a) => [a.department, a.version])).toEqual([['', 'standard-20261111'], ['dept-01', 'standard-20261111'], ['dept-02', 'strictest-20261111']]);
+    expect((await assignments()).map((a) => [a.department, a.version])).toEqual([['', 'standard-20261111'], ['dept-01', 'standard-20261111'], ['dept-02', 'strictest-20261111']]);
 
     const issued = (await (await admin('/admin/tokens', json({ label: 'はじめての設定（人事部）', department: 'dept-02' }, 'POST'))).json()) as { token: string; bootstrap: { management: { policyPublicKey: string } } };
     const res = await app.request('/v1/policy', { headers: { authorization: `Bearer ${issued.token}`, origin: EXT } });
@@ -92,12 +94,12 @@ describe('はじめての設定', () => {
       { code: 'dept-02', name: '人事総務部', preset: 'strict' },
       { code: 'dept-03', name: '開発部', preset: 'standard' },
     ]);
-    expect(assignments().map((a) => a.department)).toEqual(['', 'dept-02', 'dept-03']);
+    expect((await assignments()).map((a) => a.department)).toEqual(['', 'dept-02', 'dept-03']);
 
     // 全社で同じにすると、案内で作った部署と配布を外す
     await admin('/admin/setup/departments', json({ mode: 'whole', departments: [] }));
     expect((await setup()).departmentMode).toBe('whole');
-    expect(assignments().map((a) => a.department)).toEqual(['']);
+    expect((await assignments()).map((a) => a.department)).toEqual(['']);
   });
 
   test('同じ部署名・知らないひな形は受け付けない。viewer は使えない', async () => {

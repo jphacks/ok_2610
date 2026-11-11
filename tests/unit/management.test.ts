@@ -1,11 +1,11 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { base64UrlDecode, base64UrlEncode, type DeviceStatus, type ManagementBootstrap, type PolicyPayload } from '../../shared/management';
 import { createApp, createOrganization } from '../../server/src/app';
 import { deleteExpiredEvents, MIGRATIONS, openDb, type Db } from '../../server/src/db';
+import { emptyDb } from './db-helpers';
 import { managedMode, resolvePolicyInput, serverPolicyInput, type ServerPolicyCheck } from '../../src/core/policy';
 import { sha256Hex, verifySignedPolicy } from '../../src/infra/policy-signature';
 
@@ -83,7 +83,7 @@ async function decide(signed: unknown, bootstrap: ManagementBootstrap, overrides
 
 beforeEach(async () => {
   now = new Date('2026-11-11T05:00:00Z');
-  db = openDb(':memory:');
+  db = await emptyDb();
   app = createApp({ db, now: () => now, publicOrigin: ORIGIN });
   await createOrganization(db, 'デモ組織', 'owner@example.com', 'correct horse battery staple', now);
   cookie = await login('owner@example.com', 'correct horse battery staple');
@@ -212,7 +212,7 @@ describe('適用状況 /v1/status', () => {
     expect((await sendStatus(t.token, { ...s, policyVersion: '2026-12' })).status).toBe(202);
     expect((await sendStatus(t.token, { ...s, hostname: 'PC-001' })).status).toBe(400);
     expect((await sendStatus('tc_wrongwrongwrongwrong', s)).status).toBe(401);
-    expect(db.prepare('SELECT department, policy_version FROM device_status').all()).toEqual([{ department: 'sales', policy_version: '2026-12' }]);
+    expect(await db.query('SELECT department, policy_version FROM device_status')).toEqual([{ department: 'sales', policy_version: '2026-12' }]);
   });
 
   test('配った版を適用している台数と、止まっている台数を部署ごとに数える', async () => {
@@ -237,7 +237,7 @@ describe('適用状況 /v1/status', () => {
     const t = await issueToken(null);
     await sendStatus(t.token, status({ reportedDay: '2026-08-01' }));
     await sendStatus(t.token, status());
-    expect(deleteExpiredEvents(db, now)).toBe(1);
+    expect(await deleteExpiredEvents(db, now)).toBe(1);
   });
 });
 
@@ -292,7 +292,7 @@ describe('役割と変更履歴', () => {
     expect(entries.map((e) => e.action)).toEqual(['admin.create', 'assignment.publish', 'policy.create', 'token.create']);
     expect(entries.every((e) => e.adminEmail === 'owner@example.com')).toBe(true);
     expect(entries[1]!.detail).toEqual({ department: 'sales', version: '2026-11', minExtensionVersion: '0.10.0' });
-    const raw = JSON.stringify(db.prepare('SELECT * FROM audit_log').all());
+    const raw = JSON.stringify(await db.query('SELECT * FROM audit_log'));
     expect(raw).not.toContain(t.token);
     expect(raw).not.toContain('a long enough password');
   });
@@ -302,20 +302,22 @@ describe('DB のマイグレーション', () => {
   let dir: string;
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  test('v0.8.0 の DB を開くと、管理者は owner になり、新しいテーブルが足される', () => {
+  test('フォルダに置いた DB は、開き直してもデータが残り、マイグレーションを流し直さない', async () => {
     dir = mkdtempSync(join(tmpdir(), 'tc-db-'));
-    const path = join(dir, 'old.db');
-    const old = new DatabaseSync(path);
-    old.exec(MIGRATIONS[0]!);
-    old.exec("INSERT INTO organizations (name, created_at) VALUES ('旧組織', '2026-10-18')");
-    old.exec("INSERT INTO admins (org_id, email, password_hash, created_at) VALUES (1, 'old@example.com', 'x', '2026-10-18')");
-    old.close();
-    const migrated = openDb(path);
-    expect(migrated.prepare('SELECT email, role FROM admins').all()).toEqual([{ email: 'old@example.com', role: 'owner' }]);
-    expect(migrated.prepare('PRAGMA user_version').get()).toEqual({ user_version: MIGRATIONS.length });
-    expect(migrated.prepare('SELECT COUNT(*) AS n FROM policy_assignments').get()).toEqual({ n: 0 });
-    migrated.close();
-    // もう一度開いても流し直さない
-    openDb(path).close();
+    const first = await openDb({ dataDir: dir });
+    await createOrganization(first, '残る組織', 'keep@example.com', 'correct horse battery staple', now);
+    await first.close();
+    const again = await openDb({ dataDir: dir });
+    expect(await again.query('SELECT email, role FROM admins')).toEqual([{ email: 'keep@example.com', role: 'owner' }]);
+    expect((await again.query('SELECT version FROM schema_migrations ORDER BY version')).map((r) => Number(r.version))).toEqual(MIGRATIONS.map((_, i) => i + 1));
+    await again.close();
+  });
+
+  test('トランザクションの途中で失敗したら、それまでの書き込みも巻き戻す', async () => {
+    await expect(db.tx(async (t) => {
+      await t.run("INSERT INTO organizations (name, created_at) VALUES ('途中の組織', '2026-11-11')");
+      throw new Error('失敗');
+    })).rejects.toThrow('失敗');
+    expect(await db.query("SELECT 1 FROM organizations WHERE name = '途中の組織'")).toEqual([]);
   });
 });

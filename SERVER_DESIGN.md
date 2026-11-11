@@ -88,7 +88,7 @@
 │  出力した時点で記録を作る          │── HTTPS ──▶│  （組織トークンで受け付け）      │
 │  送信キュー（storage.local）       │  文章なし   │            │                   │
 │  fetch keepalive で送る           │            │            ▼                   │
-└────────────────────────────────┘            │ DB（node:sqlite）              │
+└────────────────────────────────┘            │ DB（PostgreSQL）               │
           ▲ chrome.storage.managed              │            ▲                   │
           │ ポリシー（reporting 設定を含む）       │ 管理画面（admin/、React）       │
  Google 管理コンソール / MDM ◀─── JSON を書き出す ─┤  ダッシュボード・ポリシー編集     │
@@ -205,7 +205,7 @@
 | 領域 | 採用（案） | 理由 |
 |---|---|---|
 | API サーバー | Hono（TypeScript）＋ Node.js 24 | 軽い。zod と相性がよい。拡張と同じ言語で型を共有できる |
-| DB | SQLite（Node.js 組込みの `node:sqlite`）。SQL は手書き | 開発とデモは1ファイルで済む。ネイティブモジュールも ORM も足さない（実装。設計案の Drizzle は見送った） |
+| DB | PostgreSQL（本番は Neon など、手元と試験は PGlite）。SQL は手書き | 無料のクラウドではサーバーのディスクが消えるため、外部の PostgreSQL に置く（§14）。ネイティブモジュールも ORM も足さない（2026年11月11日に `node:sqlite` から移した） |
 | 管理画面 | React 19 ＋ Vite | 拡張と同じ。書き方をそろえられる |
 | 共有スキーマ | `shared/usage-event.ts`（zod） | 利用記録のスキーマを拡張とサーバーで共有する。組織ポリシーの `PolicySchema` は `src/core/policy.ts` に置いたまま、サーバーと管理画面から読む（実装） |
 | 管理者の認証 | ID・パスワード（scrypt）＋セッション Cookie | 外部の認証基盤は時間の都合で使わない。状態を変える API は JSON だけを受け付け、パスワードを5回間違えると15分止める |
@@ -284,7 +284,8 @@ npm run build:demo                      # WXT_REPORT_ORIGIN=http://localhost:878
 | 環境変数 | 既定 | 用途 |
 |---|---|---|
 | `PORT` | `8787` | 拡張のビルド時の `WXT_REPORT_ORIGIN` と合わせる |
-| `DB_PATH` | `server/data/text-cleaner.db` | SQLite のファイル（Git に入れない） |
+| `DATABASE_URL` | なし | PostgreSQL の接続先。クラウドではこれを使う（§14） |
+| `DB_PATH` | `server/data/pglite` | `DATABASE_URL` がないときの手元のデータの置き場所（PGlite。Git に入れない） |
 | `EXTENSION_IDS` | なし（`chrome-extension://` をすべて許す） | 記録を受け付ける拡張の ID（カンマ区切り）。本番では指定する |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ORG_NAME` | — | 管理者がまだいないときだけ、最初の組織と管理者を作る |
 | `SECURE_COOKIES` | なし | HTTPS で動かすときに `1` |
@@ -392,7 +393,7 @@ Chrome 拡張 ──GET /v1/policy（ETag 付き）─────────�
 - 役割は `admin_roles` テーブルではなく `admins` の列に持つ（1人1役割のため）。
 - 適用状況の部署は、端末の申告より登録トークンの部署を優先する。
 - `PolicySchema` は `src/core/policy.ts` に置いたまま、拡張・サーバー・管理画面から読む（`shared/` へは移していない）。新しく足したスキーマは `shared/management.ts` に置いた。
-- 管理者の SSO（OIDC）と、本番向けの PostgreSQL への移行はまだ。DB は `node:sqlite` のまま。
+- 管理者の SSO（OIDC）はまだ。DB は §14 で PostgreSQL に移した。
 
 ---
 
@@ -415,3 +416,90 @@ Chrome 拡張 ──GET /v1/policy（ETag 付き）─────────�
 - 「全社で同じにする」を選ぶと、案内で作った部署とその部署への配布を外す。ふつうの画面で作った配布には触れない。
 - 「端末に配る」で作った登録トークンは、その画面にいる間だけ持つ。離れてからもう一度押すと新しいトークンを作る（前のトークンも有効なまま。不要なら「登録トークン」の画面で失効する）。
 - Intune の手順は、おおまかな流れだけを案内している。実際のメニュー名は確かめていない。
+
+---
+
+## 14. 無料のクラウドに置く（2026年11月11日 実装）
+
+費用をかけず、ウェブストアにも出さずに、誰でも開ける URL で管理画面にログインして管理できるようにする。実際の運用はしない（試せる状態にする）。
+
+| 役目 | 置き場所（無料プラン） |
+|---|---|
+| 管理サーバーと管理画面 | Render の Web Service（`render.yaml`） |
+| データ | Neon の PostgreSQL（`DATABASE_URL`） |
+| ポリシーの署名鍵 | Render の環境変数（`POLICY_SIGNING_KEY`）。Neon には置かない |
+
+無料のサーバーは眠ったり再起動したりするとディスクが消えるので、サーバーのディスクには何も残さない。DB は PostgreSQL にした（手元の開発と試験は、WASM で動く PostgreSQL の PGlite を使い、SQL は1種類）。
+
+### 14-1. サーバー（Neon）に置かれるもの・置かれないもの
+
+| 置かれるもの | 中身 |
+|---|---|
+| 組織 | 組織名、相談先、選んだひな形、はじめての設定の進み具合 |
+| 管理者 | メールアドレス、パスワードのハッシュ（scrypt）、役割、担当部署 |
+| セッション・登録トークン | ハッシュ（SHA-256）だけ。平文は持たない |
+| ポリシー・配布・部署 | 段階・情報の種類ごとの扱い・名前・相談先、部署名 |
+| 利用記録 | 種類ごとの件数・出力先・1時間単位の時刻など（§1-2） |
+| 適用状況 | 乱数の番号・日付・拡張とポリシーの版・状態（§12-4） |
+| 変更履歴 | 誰がいつ何を変えたか（トークンの平文・パスワードは残さない） |
+
+**置かれないもの**：社員が貼った原文、加工した文章、候補の文字列、元に戻すための対応表、カスタム辞書の語、社員のアカウント。これらは拡張の外へ出す経路がない（§1-1、ARCHITECTURE.md §13）。DB をクラウドに置いても、この境界は変わらない。
+
+### 14-2. 置き方
+
+1. **Neon**：プロジェクトを作り、接続文字列（`postgresql://…?sslmode=require`）を控える。
+2. **署名鍵**：手元で `npm run server:keygen` を実行し、出てきた1行を控える（秘密の値）。
+3. **Render**：次のどちらかで作る。
+   - **GitHub とつながない（おすすめ）**：リポジトリは公開なので、URL を貼るだけで作れる。GitHub の組織に許可をもらう必要がない。手順は §14-2-1。
+   - **GitHub とつなぐ**：このリポジトリをつなぎ、「Blueprint」で `render.yaml` を読み込む。`DATABASE_URL`・`POLICY_SIGNING_KEY`・`ADMIN_EMAIL`・`ADMIN_PASSWORD`（12文字以上）・`ORG_NAME` を入れて作る。組織のリポジトリなので、組織側の許可が要ることがある。
+4. 起動したら `https://<サービス名>.onrender.com` を開き、`ADMIN_EMAIL` でログインする。はじめての設定（§13）が始まる。
+5. 拡張で試すときは、その URL を入れてビルドする（`WXT_REPORT_ORIGIN=https://<サービス名>.onrender.com npm run build`）。
+
+- 拡張に配る初期設定の送信先は、Render が入れる `RENDER_EXTERNAL_URL` から自動で決まる（`PUBLIC_ORIGIN` で上書きできる）。
+- `DATABASE_URL` を使うときに `POLICY_SIGNING_KEY` がなければ、起動を止める（鍵をファイルに置くと起動のたびに変わり、配った初期設定と合わなくなるため）。
+- 誰でも URL を開けるので、管理者のパスワードは長くする。ログインは5回間違えると15分止まる。
+
+#### 14-2-1. GitHub とつながずに Render に置く
+
+Render の「Public Git Repository」を使う。GitHub のアカウントとはつながず、公開リポジトリの URL から取り込む（[Render の Web Services の説明](https://render.com/docs/web-services)）。秘密の値はリポジトリに入れず、すべて Render の画面の環境変数で渡す。
+
+1. Render の画面で「New」→「Web Service」を選び、「Public Git Repository」に `https://github.com/jphacks/ok_2610` を貼る。
+2. 次の値を入れる（`render.yaml` に書いてある値と同じ）。
+
+   | 項目 | 値 |
+   |---|---|
+   | Name | 好きな名前（例 `text-cleaner-admin`。URL の一部になる） |
+   | Branch | `main` |
+   | Region | `Singapore`（日本にいちばん近い） |
+   | Runtime | `Node` |
+   | Build Command | `npm ci --include=dev && npm run admin:build` |
+   | Start Command | `npm run server` |
+   | Instance Type | `Free`（選べないときは、無料プランの条件を公式の料金ページで確かめる） |
+   | Health Check Path | `/health`（「Advanced」の中） |
+
+3. 「Environment Variables」に次を入れる。
+
+   | 名前 | 値 |
+   |---|---|
+   | `NODE_VERSION` | `22.23.4` |
+   | `SECURE_COOKIES` | `1` |
+   | `DATABASE_URL` | Neon の接続文字列 |
+   | `POLICY_SIGNING_KEY` | `npm run server:keygen` で作った1行 |
+   | `ADMIN_EMAIL` | 最初の管理者のメールアドレス |
+   | `ADMIN_PASSWORD` | 最初の管理者のパスワード（12文字以上） |
+   | `ORG_NAME` | 組織名（あとで「はじめての設定」で変えられる） |
+
+4. 作ると、ビルドと起動が始まる。終わったら、上の手順4から続ける。
+
+- **更新は手で行う**：GitHub とつないでいないので、main が変わっても自動では入れ直さない。入れ直すときは、Render の画面で「Manual Deploy」を押す。
+- **設定ファイルは読み込まれない**：`render.yaml` は自動では読み込まれない。値を変えたときは、画面と `render.yaml` の両方をそろえる。
+- **公式が想定する使い方とは少し違う**：Render のドキュメントでは、この方法は自分が属していない公開リポジトリを置くためのものとされている（禁止はされていない）。
+
+### 14-3. 無料プランの制約（2026年11月時点の第三者の解説による。使う前に公式の料金ページで確かめる）
+
+- Render：15分アクセスがないと眠り、次に開くと表示まで1分ほどかかる。月750時間まで。本番向けではない。Render の無料データベースは30日で消えるので使わない。
+- Neon：容量は 0.5〜1GB。使われないと計算資源が止まり、最初の問い合わせが少し遅くなる。
+
+### 14-4. 手元で動かすとき
+
+`DATABASE_URL` を入れなければ、PGlite のデータを `server/data/pglite` に置く（`DB_PATH` で変えられる）。以前の SQLite のファイル（`server/data/text-cleaner.db`）は読み込まない（開発用のデータのため移さない）。
