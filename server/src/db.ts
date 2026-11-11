@@ -116,8 +116,25 @@ CREATE TABLE audit_log (
 CREATE INDEX audit_log_org_at ON audit_log (org_id, at);
 `;
 
+/** 3: 初回の案内（はじめての設定）。相談先・選んだひな形・部署の日本語名と、案内の進み具合 */
+const V3 = `
+ALTER TABLE organizations ADD COLUMN contact TEXT;
+ALTER TABLE organizations ADD COLUMN default_preset TEXT;
+ALTER TABLE organizations ADD COLUMN collect_usage INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE organizations ADD COLUMN setup_org_at TEXT;
+ALTER TABLE organizations ADD COLUMN setup_departments_at TEXT;
+CREATE TABLE departments (
+  org_id INTEGER NOT NULL REFERENCES organizations(id),
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  preset TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (org_id, code)
+);
+`;
+
 /** 試験で古い DB を作るために公開する */
-export const MIGRATIONS = [V1, V2];
+export const MIGRATIONS = [V1, V2, V3];
 
 export function openDb(path: string): Db {
   const db = new DatabaseSync(path);
