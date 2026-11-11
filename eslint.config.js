@@ -10,7 +10,7 @@ const NETWORK_GLOBALS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 
 }));
 
 export default tseslint.config(
-  { ignores: ['.output/', '.wxt/', 'node_modules/', 'public/', '.venv-ner/', 'test-results/', 'admin/dist/', 'server/data/'] },
+  { ignores: ['.output/', '.wxt/', 'node_modules/', 'public/', '.venv-ner/', 'test-results/', 'admin/dist/', 'server/data/', '.vercel/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
