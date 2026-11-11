@@ -1,4 +1,5 @@
 import type { PolicyState } from '../../shared/management';
+import type { PresetId } from '../../shared/policy-presets';
 import type { Policy } from '../../src/core/policy';
 
 // 管理 API（server/src/app.ts）の呼び出し。同じオリジンの /admin/* だけを使い、セッションは Cookie で送る。
@@ -55,6 +56,17 @@ export type Token = { id: number; label: string; department: string | null; crea
 export type IssuedToken = { id: number; label: string; department: string | null; token: string; bootstrap: unknown; bootstrapGoogle: unknown };
 export type AdminAccount = { id: number; email: string; role: Role; department: string | null; createdAt: string; disabledAt: string | null };
 export type AuditEntry = { id: number; at: string; adminEmail: string; action: string; detail: Record<string, unknown> };
+export type Department = { code: string; name: string; preset: PresetId };
+export type SetupSteps = { organization: boolean; rules: boolean; departments: boolean; distribute: boolean; connected: boolean };
+export type SetupState = {
+  organization: { name: string; contact: string | null };
+  defaultPreset: PresetId | null;
+  collectUsage: boolean;
+  departmentMode: 'split' | 'whole' | null;
+  departments: Department[];
+  steps: SetupSteps;
+  complete: boolean;
+};
 
 const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) });
 
@@ -80,4 +92,10 @@ export const api = {
   updateAdmin: (id: number, a: { role: Role; department: string | null }) => call<void>(`/admin/admins/${id}`, json('PATCH', a)),
   disableAdmin: (id: number) => call<void>(`/admin/admins/${id}`, { method: 'DELETE' }),
   audit: () => call<AuditEntry[]>('/admin/audit'),
+  setup: () => call<SetupState>('/admin/setup'),
+  saveOrganization: (o: { name: string; contact: string }) => call<void>('/admin/setup/organization', json('PUT', o)),
+  saveRules: (r: { preset: PresetId; collectUsage: boolean }) => call<void>('/admin/setup/rules', json('PUT', r)),
+  saveDepartments: (d: { mode: 'split' | 'whole'; departments: { code?: string; name: string; preset: PresetId }[] }) =>
+    call<{ departments: Department[] }>('/admin/setup/departments', json('PUT', d)),
+  departments: () => call<Department[]>('/admin/departments'),
 };

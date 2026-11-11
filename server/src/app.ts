@@ -10,6 +10,7 @@ import { PolicySchema, resolvePolicy } from '../../src/core/policy';
 import { computeCoverage } from './coverage';
 import { transaction, type Db } from './db';
 import { hashPassword, newOrgToken, newSessionId, sha256, verifyPassword } from './secrets';
+import { registerSetup } from './setup';
 import { ephemeralSigner, type Signer } from './signing';
 import { computeStats } from './stats';
 
@@ -36,6 +37,7 @@ const RANK: Record<Role, number> = { dept_viewer: 0, viewer: 1, policy_admin: 2,
 
 type Admin = { id: number; orgId: number; email: string; role: Role; department: string | null };
 type Env = { Variables: { admin: Admin } };
+export type AppEnv = Env;
 type Token = { id: number; org_id: number; department: string | null; token_hash: string };
 
 const SESSION_COOKIE = 'tc_admin';
@@ -459,6 +461,8 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
     audit(admin, 'admin.disable', { email: target.email });
     return c.body(null, 204);
   });
+
+  registerSetup({ app, db, iso, audit, atLeast, readJson });
 
   // ---- 変更履歴 --------------------------------------------------------------------------
   app.get('/admin/audit', atLeast('viewer'), (c) => {

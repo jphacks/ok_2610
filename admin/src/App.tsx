@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Admins } from './Admins';
-import { api, ApiError, atLeast, type Me, type Role } from './api';
+import { api, ApiError, atLeast, type Me, type Role, type SetupState } from './api';
 import { Assignments } from './Assignments';
 import { Audit } from './Audit';
 import { CoveragePage } from './Coverage';
 import { Overview } from './Overview';
 import { Policies } from './Policies';
+import { Setup, SetupChecklist } from './Setup';
 import { Tokens } from './Tokens';
 
-type Page = 'overview' | 'coverage' | 'policies' | 'assignments' | 'tokens' | 'admins' | 'audit';
+type Page = 'setup' | 'overview' | 'coverage' | 'policies' | 'assignments' | 'tokens' | 'admins' | 'audit';
 /** 役割ごとに見せる画面。サーバー側でも同じ役割で API を守る */
 const PAGES: { id: Page; label: string; min: Role }[] = [
+  { id: 'setup', label: 'はじめての設定', min: 'policy_admin' },
   { id: 'overview', label: '概要', min: 'dept_viewer' },
   { id: 'coverage', label: '適用状況', min: 'dept_viewer' },
   { id: 'policies', label: 'ポリシー', min: 'policy_admin' },
@@ -23,11 +25,19 @@ const PAGES: { id: Page; label: string; min: Role }[] = [
 export function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [page, setPage] = useState<Page>('overview');
+  const [setup, setSetup] = useState<SetupState | null>(null);
   useEffect(() => { api.me().then(setMe).catch(() => setMe(null)); }, []);
+  // 設定を変えられる管理者には、はじめての設定が終わるまで案内を出す。ログインした直後は案内から始める
+  useEffect(() => {
+    if (!me || !atLeast(me, 'policy_admin')) return;
+    api.setup().then((s) => { setSetup(s); if (!s.complete) setPage('setup'); }).catch(() => setSetup(null));
+  }, [me]);
+  const refreshSetup = () => void api.setup().then(setSetup).catch(() => undefined);
 
   if (me === undefined) return null;
   if (me === null) return <Login onDone={setMe} />;
-  const pages = PAGES.filter((p) => atLeast(me, p.min));
+  // はじめての設定は、終わったらメニューから外す（概要の「はじめにやること」も消える）
+  const pages = PAGES.filter((p) => atLeast(me, p.min) && (p.id !== 'setup' || !setup?.complete || page === 'setup'));
   return (
     <div className="shell">
       <header className="topbar">
@@ -37,7 +47,7 @@ export function App() {
         </div>
         <nav aria-label="管理画面">
           {pages.map((p) => (
-            <button key={p.id} type="button" aria-current={page === p.id ? 'page' : undefined} onClick={() => setPage(p.id)}>{p.label}</button>
+            <button key={p.id} type="button" aria-current={page === p.id ? 'page' : undefined} onClick={() => { setPage(p.id); if (p.id === 'overview') refreshSetup(); }}>{p.label}</button>
           ))}
         </nav>
         <div className="account">
@@ -47,6 +57,8 @@ export function App() {
         </div>
       </header>
       <main>
+        {page === 'setup' && atLeast(me, 'policy_admin') && <Setup onDone={() => { refreshSetup(); setPage('overview'); }} />}
+        {page === 'overview' && setup && !setup.complete && <SetupChecklist state={setup} onResume={() => setPage('setup')} />}
         {page === 'overview' && <Overview fixedDepartment={me.role === 'dept_viewer' ? me.department : null} />}
         {page === 'coverage' && <CoveragePage fixedDepartment={me.role === 'dept_viewer' ? me.department : null} />}
         {page === 'policies' && atLeast(me, 'policy_admin') && <Policies />}

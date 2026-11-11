@@ -16,6 +16,8 @@ function describe(e: AuditEntry): string {
     case 'admin.create':
     case 'admin.update': return `${String(d.email)} を ${String(d.role)}${d.department ? `（${String(d.department)}）` : ''}`;
     case 'admin.disable': return String(d.email);
+    case 'organization.update': return `${String(d.name)}${d.contact ? `（相談先 ${String(d.contact)}）` : ''}`;
+    case 'departments.save': return d.mode === 'whole' ? '全社で同じにする' : (d.departments as { name: string }[]).map((x) => x.name).join('・') || '部署なし';
     default: return JSON.stringify(d);
   }
 }
