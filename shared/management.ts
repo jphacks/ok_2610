@@ -50,7 +50,26 @@ export const PolicyPayloadSchema = z.strictObject({
 });
 export type PolicyPayload = z.infer<typeof PolicyPayloadSchema>;
 
-export const POLICY_STATES = ['active', 'expired', 'invalid', 'missing', 'outdated'] as const;
+/**
+ * 「すぐ止める」設定の組織で、登録トークンを失効した・配布を取り下げたときに GET /v1/policy が 410 で返す知らせ。
+ * ポリシーと同じ鍵で署名し、形（kind）で見分ける。PolicyPayloadSchema とは項目が違うので、取り違えて読むことはない。
+ * 拡張は署名と宛先（tokenHash）を確かめてから、手元の版を捨てて出力を止める（SERVER_DESIGN.md §12-8）。
+ */
+export const STOP_REASONS = ['revoked', 'unassigned'] as const;
+export type StopReason = (typeof STOP_REASONS)[number];
+export const StopNoticeSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  kind: z.literal('stop'),
+  orgId: z.number().int().positive(),
+  tokenHash: z.string().regex(/^[0-9a-f]{64}$/),
+  /** revoked：登録トークンを失効した。unassigned：この部署にも全社にも配っていない */
+  reason: z.enum(STOP_REASONS),
+  issuedAt: isoTime,
+});
+export type StopNotice = z.infer<typeof StopNoticeSchema>;
+
+/** stopped は「すぐ止める」設定で管理者が止めた状態（失効したトークンの端末は報告も届かない） */
+export const POLICY_STATES = ['active', 'expired', 'invalid', 'missing', 'outdated', 'stopped'] as const;
 export type PolicyState = (typeof POLICY_STATES)[number];
 export const POLICY_SOURCES = ['server', 'mdm'] as const;
 export type PolicySource = (typeof POLICY_SOURCES)[number];

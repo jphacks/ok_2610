@@ -115,14 +115,21 @@ async function fakeManagementServer(context: BrowserContext, opts: { department:
   };
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
   const signed = { payload: base64UrlEncode(bytes), signature: base64UrlEncode(new Uint8Array(sign(null, bytes, privateKey))) };
-  const state = { online: true, captured: [] as Captured[] };
+  // 「すぐ止める」設定の組織が返す、署名付きの止める知らせ（§12-8）
+  const noticeBytes = new TextEncoder().encode(JSON.stringify({ schemaVersion: 1, kind: 'stop', orgId: 1, tokenHash: payload.tokenHash, reason: 'unassigned', issuedAt: new Date().toISOString() }));
+  const stopNotice = { payload: base64UrlEncode(noticeBytes), signature: base64UrlEncode(new Uint8Array(sign(null, noticeBytes, privateKey))) };
+  const state = { online: true, stopped: false, captured: [] as Captured[] };
   await context.route(`${ORIGIN}/**`, async (route) => {
     const req = route.request();
     const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type, authorization, if-none-match' };
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
     if (!state.online) return route.fulfill({ status: 503, headers: cors });
     state.captured.push({ method: req.method(), url: req.url(), auth: req.headers().authorization ?? null, body: req.postData() ?? '' });
-    if (req.method() === 'GET' && req.url() === `${ORIGIN}/v1/policy`) return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(signed) });
+    if (req.method() === 'GET' && req.url() === `${ORIGIN}/v1/policy`) {
+      return state.stopped
+        ? route.fulfill({ status: 410, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(stopNotice) })
+        : route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(signed) });
+    }
     return route.fulfill({ status: 202, headers: cors });
   });
   const bootstrap = { endpoint: ORIGIN, enrollmentToken: TOKEN, policyPublicKey: publicKey.export({ type: 'spki', format: 'der' }).toString('base64') };
@@ -161,4 +168,23 @@ test('管理サーバーから署名付きのポリシーを受け取って使�
   await page.getByLabel('解析する文章').fill(demo);
   await expect(page.getByText('ポリシー読込み失敗')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/署名を確かめられません/).first()).toBeVisible();
+});
+
+test('「すぐ止める」設定の組織から止める知らせが届いたら、保存済みの版があってもその場で止まる', async ({ context, extensionId }) => {
+  const { state, bootstrap } = await fakeManagementServer(context, { department: 'sales', policy: { version: '2026-11', reporting: { enabled: true } } });
+  const page = await context.newPage();
+  await withPolicy(page, { management: bootstrap });
+  await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await expect(page.getByText('組織ポリシー 2026-11（管理サーバー）')).toBeVisible({ timeout: 30_000 });
+
+  // 管理者が配布を取り下げた（すぐ止める設定）。次にサイドパネルを開くと止まる
+  state.stopped = true;
+  await page.reload();
+  await expect(page.getByText('管理者が停止').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/配布を止めたため/).first()).toBeVisible();
+  // 手元の版は捨ててあるので、通信できなくなっても前の版には戻らない
+  expect(await page.evaluate(async () => Object.keys(await chrome.storage.local.get(['managedPolicy', 'managedStop'])))).toEqual(['managedStop']);
+  state.online = false;
+  await page.reload();
+  await expect(page.getByText('管理者が停止').first()).toBeVisible({ timeout: 30_000 });
 });

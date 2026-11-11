@@ -6,7 +6,7 @@ import { deptLabel, POLICY_STATE_LABEL } from './labels';
 // 適用状況（SERVER_DESIGN.md §12-5）。配った版が端末に届いているかを、部署・版ごとの台数で見せる。端末ごとの一覧は出さない。
 
 const fmt = (n: number) => n.toLocaleString('ja-JP');
-const STOPPED: PolicyState[] = ['expired', 'missing', 'invalid', 'outdated'];
+const STOPPED: PolicyState[] = ['expired', 'missing', 'invalid', 'outdated', 'stopped'];
 
 export function CoveragePage({ fixedDepartment }: { fixedDepartment: string | null }) {
   const [coverage, setCoverage] = useState<Coverage | null>(null);

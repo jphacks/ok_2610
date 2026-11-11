@@ -7,7 +7,7 @@ import { createApp, createOrganization } from '../../server/src/app';
 import { deleteExpiredEvents, MIGRATIONS, openDb, type Db } from '../../server/src/db';
 import { emptyDb } from './db-helpers';
 import { managedMode, resolvePolicyInput, serverPolicyInput, type ServerPolicyCheck } from '../../src/core/policy';
-import { sha256Hex, verifySignedPolicy } from '../../src/infra/policy-signature';
+import { sha256Hex, verifySignedPolicy, verifyStopNotice } from '../../src/infra/policy-signature';
 
 // 一元管理（SERVER_DESIGN.md §12）。サーバーの配布・適用状況・役割と、拡張側の署名の確認を通しで確かめる。
 
@@ -72,6 +72,7 @@ async function decide(signed: unknown, bootstrap: ManagementBootstrap, overrides
       buildOrigin: ORIGIN,
       payload,
       tampered: signed !== null && payload === null,
+      stop: null,
       tokenHash: await sha256Hex(bootstrap.enrollmentToken),
       extensionVersion: '0.10.0',
       nowIso: now.toISOString(),
@@ -182,6 +183,88 @@ describe('ポリシーの配布 /v1/policy', () => {
     const id = await savePolicy({ version: 'soon', expiresAt: '2026-11-11T10:00:00.000Z' });
     now = new Date('2026-11-11T11:00:00Z');
     expect((await assign(null, id)).status).toBe(400);
+  });
+});
+
+describe('すぐ止める（§12-8）', () => {
+  const setImmediateStop = (on: boolean, as_ = admin) => as_('/admin/settings', json({ immediateStop: on }, {}, 'PUT'));
+  const revoke = async () => {
+    const { id } = ((await (await admin('/admin/tokens')).json()) as { id: number }[])[0]!;
+    expect((await admin(`/admin/tokens/${id}`, { method: 'DELETE' })).status).toBe(204);
+  };
+
+  test('既定はオフ。オフなら失効は 401・配布なしは 404 で、端末は手元の版を期限まで使う', async () => {
+    expect(await (await admin('/admin/settings')).json()).toEqual({ immediateStop: false });
+    const t = await issueToken('sales');
+    expect((await fetchPolicy(t.token)).status).toBe(404);
+    await revoke();
+    expect((await fetchPolicy(t.token)).status).toBe(401);
+  });
+
+  test('オンなら、失効したトークンの端末に署名付きの知らせを返し、端末は手元の版があっても止まる', async () => {
+    const t = await issueToken('sales');
+    await assign(null, await savePolicy({ version: 'v1' }));
+    const signed = await (await fetchPolicy(t.token)).json();
+    expect(await decide(signed, t.bootstrap.management)).toMatchObject({ status: 'active' });
+
+    expect((await setImmediateStop(true)).status).toBe(204);
+    await revoke();
+    const res = await fetchPolicy(t.token);
+    expect(res.status).toBe(410);
+    expect(res.headers.get('access-control-allow-origin')).toBe(EXT);
+    const body = await res.json();
+    const notice = (await verifyStopNotice(body, t.bootstrap.management.policyPublicKey))!;
+    expect(notice).toMatchObject({ kind: 'stop', reason: 'revoked', tokenHash: await sha256Hex(t.token) });
+    // 止める知らせはポリシーとしては読めず、ポリシーは止める知らせとしては読めない（形で見分ける）
+    expect(await verifySignedPolicy(body, t.bootstrap.management.policyPublicKey)).toBeNull();
+    expect(await verifyStopNotice(signed, t.bootstrap.management.policyPublicKey)).toBeNull();
+    expect(await decide(signed, t.bootstrap.management, { stop: notice })).toMatchObject({ status: 'error', state: 'stopped' });
+    // 失効したトークンでは、記録も適用状況も受け付けない
+    expect((await sendStatus(t.token, status())).status).toBe(401);
+  });
+
+  test('オンなら、配布を取り下げた部署の端末も止まる。配り直せば同じトークンでまた受け取れる', async () => {
+    const t = await issueToken(null);
+    await setImmediateStop(true);
+    const id = await savePolicy({ version: 'v1' });
+    await assign(null, id);
+    expect((await fetchPolicy(t.token)).status).toBe(200);
+    await admin('/admin/assignments', { method: 'DELETE' });
+    const stopped = await fetchPolicy(t.token);
+    expect(stopped.status).toBe(410);
+    expect(await verifyStopNotice(await stopped.json(), t.bootstrap.management.policyPublicKey)).toMatchObject({ reason: 'unassigned' });
+    await assign(null, id);
+    expect((await fetchPolicy(t.token)).status).toBe(200);
+  });
+
+  test('ほかの登録トークンに宛てた知らせでは止まらない。署名を書き換えた知らせは読めない', async () => {
+    const sales = await issueToken('sales');
+    const hr = await issueToken('hr');
+    await setImmediateStop(true);
+    const salesStop = (await verifyStopNotice(await (await fetchPolicy(sales.token)).json(), sales.bootstrap.management.policyPublicKey))!;
+    await assign(null, await savePolicy({ version: 'v1' }));
+    const hrPolicy = await (await fetchPolicy(hr.token)).json();
+    expect(await decide(hrPolicy, hr.bootstrap.management, { stop: salesStop })).toMatchObject({ status: 'active' });
+
+    const forged = { payload: base64UrlEncode(new TextEncoder().encode(JSON.stringify({ ...salesStop, tokenHash: await sha256Hex(hr.token) }))), signature: 'AAAA' };
+    expect(await verifyStopNotice(forged, hr.bootstrap.management.policyPublicKey)).toBeNull();
+  });
+
+  test('切り替えられるのは policy_admin 以上。切り替えは変更履歴に残り、止まった端末は適用状況で数える', async () => {
+    await admin('/admin/admins', json({ email: 'v@example.com', password: 'a long enough password', role: 'viewer' }));
+    const viewer = as(await login('v@example.com', 'a long enough password'));
+    expect((await viewer('/admin/settings')).status).toBe(200);
+    expect((await setImmediateStop(true, viewer)).status).toBe(403);
+    expect((await setImmediateStop(true)).status).toBe(204);
+    expect((await admin('/admin/settings', json({ immediateStop: 'yes' }, {}, 'PUT'))).status).toBe(400);
+    const entries = (await (await admin('/admin/audit')).json()) as { action: string; detail: unknown }[];
+    expect(entries[0]).toMatchObject({ action: 'settings.immediateStop', detail: { immediateStop: true } });
+
+    const t = await issueToken('sales');
+    await sendStatus(t.token, status({ policyVersion: null, policyState: 'stopped' }));
+    const c = (await (await admin('/admin/coverage')).json()) as { totals: { stopped: number }; departments: { states: Record<string, number> }[] };
+    expect(c.totals.stopped).toBe(1);
+    expect(c.departments[0]!.states.stopped).toBe(1);
   });
 });
 

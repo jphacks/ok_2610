@@ -43,6 +43,7 @@ export const POLICY_STATE_LABEL: Record<string, string> = {
   invalid: '読込み失敗',
   missing: '未取得',
   outdated: '拡張が古い',
+  stopped: '管理者が停止',
 };
 
 export const AUDIT_LABEL: Record<string, string> = {
@@ -51,6 +52,7 @@ export const AUDIT_LABEL: Record<string, string> = {
   'assignment.remove': '配布を取り下げ',
   'token.create': '登録トークンを発行',
   'token.revoke': '登録トークンを失効',
+  'settings.immediateStop': '「すぐ止める」を切り替え',
   'admin.create': '管理者を追加',
   'admin.update': '管理者の役割を変更',
   'admin.disable': '管理者を無効化',

@@ -1,7 +1,7 @@
-import { DeviceStatusSchema, SignedPolicySchema, type DeviceStatus, type PolicyPayload, type PolicySource } from '../../shared/management';
+import { DeviceStatusSchema, SignedPolicySchema, type DeviceStatus, type PolicyPayload, type PolicySource, type StopNotice } from '../../shared/management';
 import { SAFE_TOKEN } from '../../shared/usage-event';
 import { managedMode, reportingTarget, resolvePolicyInput, serverPolicyInput, type PolicyInput, type ResolvedPolicy } from '../core/policy';
-import { sha256Hex, verifySignedPolicy } from './policy-signature';
+import { sha256Hex, verifySignedPolicy, verifyStopNotice } from './policy-signature';
 import { REPORT_ORIGIN } from './report-origin';
 import { readManagedPolicy } from './storage';
 
@@ -10,6 +10,8 @@ import { readManagedPolicy } from './storage';
 // - 適用している版と状態を1日1回まで報告する。文章・利用者の識別子は扱わない
 
 const CACHE_KEY = 'managedPolicy';
+/** 「すぐ止める」設定の組織から届いた、署名付きの止める知らせ（SERVER_DESIGN.md §12-8） */
+const STOP_KEY = 'managedStop';
 const INSTALL_ID_KEY = 'installId';
 const STATUS_DAY_KEY = 'statusSentDay';
 const STATUS_LAST_KEY = 'statusLastSent';
@@ -34,6 +36,16 @@ async function verifiedCache(publicKey: string): Promise<{ payload: PolicyPayloa
   return payload ? { payload, tampered: false, ...(cache.etag ? { etag: cache.etag } : {}) } : { payload: null, tampered: true };
 }
 
+/** 手元の止める知らせ。署名が合わなければ無いものとする（消されても、手元の版はもう捨ててあるので未取得で止まる） */
+async function verifiedStop(publicKey: string): Promise<StopNotice | null> {
+  try {
+    const { [STOP_KEY]: raw } = await chrome.storage.local.get(STOP_KEY);
+    return raw ? await verifyStopNotice(raw, publicKey) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Worker に渡す検証前のポリシーを組み立てる。MDM のポリシーはそのまま、サーバーのポリシーは署名を確かめてから渡す。
  */
@@ -53,6 +65,7 @@ export async function readPolicyInput(now = new Date()): Promise<PolicyInput> {
         buildOrigin: REPORT_ORIGIN,
         payload,
         tampered,
+        stop: await verifiedStop(mode.bootstrap.policyPublicKey),
         tokenHash: await sha256Hex(mode.bootstrap.enrollmentToken),
         extensionVersion: chrome.runtime.getManifest().version,
         nowIso: now.toISOString(),
@@ -97,17 +110,34 @@ async function sync(): Promise<'updated' | 'unchanged'> {
   } catch {
     return 'unchanged'; // 通信できない。手元の版を期限まで使う
   }
+  const tokenHash = await sha256Hex(mode.bootstrap.enrollmentToken);
+  if (res.status === 410) return applyStop(await res.json().catch(() => null), mode.bootstrap.policyPublicKey, tokenHash);
   if (res.status !== 200) return 'unchanged'; // 304（変わっていない）・401・404・5xx は手元の版のまま
   const signed = SignedPolicySchema.safeParse(await res.json().catch(() => null));
   if (!signed.success) return 'unchanged';
   const payload = await verifySignedPolicy(signed.data, mode.bootstrap.policyPublicKey);
-  if (!payload || payload.tokenHash !== (await sha256Hex(mode.bootstrap.enrollmentToken))) return 'unchanged';
+  if (!payload || payload.tokenHash !== tokenHash) return 'unchanged';
+  // 配り直された（または新しいトークンで受け取れた）ので、前の止める知らせは要らない
+  await chrome.storage.local.remove(STOP_KEY);
   // 手元より古い署名は受け取らない（古い版へ戻す攻撃を防ぐ）。管理者が古い版を配り直したときは新しい日付で署名される
   if (current.payload && payload.issuedAt < current.payload.issuedAt) return 'unchanged';
   const etag = res.headers.get('etag') ?? undefined;
   await chrome.storage.local.set({ [CACHE_KEY]: { signed: signed.data, ...(etag ? { etag } : {}) } satisfies Cache });
   // 署名の時刻は毎日変わるので、中身（版・ポリシー・最低版）が変わったときだけ「更新された」と知らせる
   return current.payload && sameContent(current.payload, payload) ? 'unchanged' : 'updated';
+}
+
+/**
+ * 「すぐ止める」設定の組織から届いた知らせを確かめ、手元の版を捨てて止める。署名と宛先が合わないものは無視する
+ * （手元の版を期限まで使う、今までどおりの動き）。
+ */
+async function applyStop(body: unknown, publicKey: string, tokenHash: string): Promise<'updated' | 'unchanged'> {
+  const notice = await verifyStopNotice(body, publicKey);
+  if (!notice || notice.tokenHash !== tokenHash) return 'unchanged';
+  const before = await verifiedStop(publicKey);
+  await chrome.storage.local.set({ [STOP_KEY]: body });
+  await chrome.storage.local.remove(CACHE_KEY);
+  return before && before.tokenHash === tokenHash && before.reason === notice.reason ? 'unchanged' : 'updated';
 }
 
 const contentOf = (p: PolicyPayload) => JSON.stringify([p.policyId, p.version, p.minExtensionVersion, p.policy]);

@@ -214,8 +214,16 @@ CREATE TABLE login_failures (
 CREATE INDEX login_failures_email_at ON login_failures (email, failed_at)
 `;
 
+/**
+ * 3: 「すぐ止める」設定（SERVER_DESIGN.md §12-8）。オンの組織では、失効したトークン・配布のない部署の端末に、
+ * 署名付きの「止める」知らせを返す（既定はオフ。手元の版を期限まで使わせる）
+ */
+const V3 = `
+ALTER TABLE organizations ADD COLUMN immediate_stop BOOLEAN NOT NULL DEFAULT FALSE
+`;
+
 /** 試験で適用の順番を確かめるために公開する */
-export const MIGRATIONS = [V1, V2];
+export const MIGRATIONS = [V1, V2, V3];
 
 /** マイグレーションを同時に流さないための鍵（PostgreSQL の advisory lock の番号） */
 const MIGRATION_LOCK = 2610;
