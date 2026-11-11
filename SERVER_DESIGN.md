@@ -480,7 +480,8 @@ Chrome 拡張 ──GET /v1/policy（ETag 付き）─────────�
 
 6. **本番に置く**：手元で `npx vercel --prod` を実行する。
 7. `https://<プロジェクト名>.vercel.app` を開き、`ADMIN_EMAIL` でログインする。はじめての設定（§13）が始まる。
-8. 拡張で試すときは、その URL を入れてビルドする（`WXT_REPORT_ORIGIN=https://<プロジェクト名>.vercel.app npm run build`）。
+8. 拡張で試すときは、その URL を入れてビルドする（`WXT_REPORT_ORIGIN=https://<プロジェクト名>.vercel.app npm run build`。PowerShell では `$env:WXT_REPORT_ORIGIN='https://<プロジェクト名>.vercel.app'; npm run build`）。
+9. MDM を使わずに手元の Windows 1台で拡張をつなぐときは §14-2-2。
 
 - **更新**：main が変わったら、`git pull` してから `npx vercel --prod` をもう一度実行する（GitHub とつないでいないので自動では入れ直さない）。
 - **開く URL**：`npx vercel`（`--prod` なし）で作った試しの URL は、Vercel にログインした本人しか開けない（Vercel の保護）。誰でも開けるのは本番の `https://<プロジェクト名>.vercel.app`。
@@ -501,6 +502,25 @@ Chrome 拡張 ──GET /v1/policy（ETag 付き）─────────�
 | ログインの失敗 | DB に数える（要求ごとに別の関数が動いても、5回で15分止まる） |
 
 - 拡張からの送信の回数制限（§4。組織トークンごとに毎分600件）は、関数ごとのメモリで数えるので、Vercel ではふつうのサーバーよりゆるくなる。試す用途では問題にしない。
+
+#### 14-2-2. MDM を使わずに Windows 1台で拡張をつなぐ（試す用）
+
+拡張は初期設定（`management`）を `chrome.storage.managed`、つまり組織の管理ツールから届いたポリシーとして受け取る。MDM がない手元の PC では、Chrome が拡張のポリシーを読むレジストリ（`HKCU\Software\Policies\Google\Chrome\3rdparty\extensions\<拡張のID>\policy`）に書いて代わりにする。社員や管理者がこの作業をすることはない（実際の運用では MDM で配る）。
+
+1. 拡張を §14-2 の手順8でビルドし、`chrome://extensions` で読み込む（デベロッパー モードをオンにすると拡張の ID が出る）。
+2. 管理画面の「登録トークン」で発行し、「そのままの JSON」の「コピー」を押す（中身に登録トークンが入るので、ほかへ貼らない）。
+3. スタートメニューで PowerShell を右クリックし「管理者として実行」で開き、リポジトリの一番上のフォルダで次を実行する。`HKCU\Software\Policies` は、自分のユーザーの分でも管理者しか書けない。
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File scripts\connect-extension-windows.ps1 -ExtensionId <拡張のID>
+   ```
+
+4. `chrome://policy` で「ポリシーを再読み込み」を押し、テキストクリーナーの欄に `management` が出ることを確かめる。
+5. `chrome://extensions` で拡張を再読み込みし、サイドパネルを開く。管理画面の「適用状況」にその端末が出る。配った版がなければ「未取得」で出力を止めるので、はじめての設定（§13）でルールを選んで配る。
+
+- スクリプト（`scripts/connect-extension-windows.ps1`）は、クリップボードの JSON を確かめてから書く（送信先が https、トークンが `tc_` で始まる、公開鍵がある）。Google 管理コンソール用の形（`{ "Value": … }` で包んだもの）も受け付ける。登録トークンは画面に出さない。
+- 書いているあいだ、Chrome に「組織によって管理されています」と出る。元に戻すときは、同じコマンドに `-Remove` を付けて実行し、`chrome://policy` で再読み込みする。
+- 2026年11月12日に、ドメインに参加していない Windows 11 Home で、この手順で拡張がつながり、配った版を適用することを確かめた。
 
 ### 14-3. 無料プランの制約（2026年11月12日に公式のページで確かめた）
 
