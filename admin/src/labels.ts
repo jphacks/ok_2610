@@ -57,6 +57,7 @@ export const AUDIT_LABEL: Record<string, string> = {
   'admin.update': '管理者の役割を変更',
   'admin.disable': '管理者を無効化',
   'organization.update': '組織の情報を変更',
+  'organization.signup': '組織を作成（新しく始める）',
   'departments.save': '部署を登録'
 };
 

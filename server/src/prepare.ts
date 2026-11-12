@@ -65,7 +65,18 @@ export async function prepareServer(env: Env = process.env): Promise<{ db: Db; a
     secureCookies: env.SECURE_COOKIES === '1' || onVercel,
     signer: loadSigner({ pem: env.POLICY_SIGNING_KEY, path: env.SIGNING_KEY_PATH ?? 'server/data/policy-signing-key.pem' }),
     ...(publicOrigin ? { publicOrigin } : {}),
+    signup: {
+      enabled: env.ALLOW_SIGNUP === '1',
+      maxOrganizations: positiveInt(env.SIGNUP_MAX_ORGS, 100),
+      perHour: positiveInt(env.SIGNUP_PER_HOUR, 10),
+    },
   });
   app.get('/health', (c) => c.json({ ok: true }));
   return { db, app };
+}
+
+/** 環境変数の正の整数。なければ・数でなければ既定値 */
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
 }

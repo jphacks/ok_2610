@@ -292,6 +292,8 @@ npm run build:demo                      # WXT_REPORT_ORIGIN=http://localhost:878
 | `PUBLIC_ORIGIN` | Vercel・Render が入れる公開 URL、なければ要求の URL のオリジン | 初期設定に入れる管理サーバーの URL。逆プロキシの後ろで動かすときに指定する |
 | `POLICY_SIGNING_KEY` | なし | ポリシーの署名鍵（Ed25519、PKCS#8 の PEM）。本番は KMS などから注入する |
 | `CRON_SECRET` | なし | Vercel の Cron が保存期間の掃除（`/cron/purge`）を呼ぶときの合言葉。Vercel では必須（§14） |
+| `ALLOW_SIGNUP` | なし | `1` にすると、ログイン画面の「新しく始める」から誰でも組織と owner を作れる（§15） |
+| `SIGNUP_MAX_ORGS` / `SIGNUP_PER_HOUR` | `100` / `10` | 「新しく始める」で作れる組織の数の上限と、全体で1時間に作れる数（§15） |
 | `SIGNING_KEY_PATH` | `server/data/policy-signing-key.pem` | `POLICY_SIGNING_KEY` がないときに読む鍵。なければ作る（開発用。Git に入れない） |
 
 署名鍵を変えると、配った初期設定の公開鍵と合わなくなり、端末は新しい版を受け取れなくなる（手元の版を期限まで使ったあと止まる）。鍵を変えたら初期設定を配り直す。
@@ -559,3 +561,17 @@ Vercel 用の出力だけを手元で作って確かめるときは `npm run ver
 - Build Command は `npm ci --include=dev && npm run admin:build`、Start Command は `npm run server`、Health Check Path は `/health`、Instance Type は `Free`。
 - 環境変数は §14-2 の表から `CRON_SECRET` を除いたものに、`NODE_VERSION`（`22.23.4`）と `SECURE_COOKIES`（`1`）を足す。保存期間の掃除はサーバーが1日ごとに行う。
 - Neon の地域は Render に合わせて AWS Singapore にする。
+
+---
+
+## 15. 新しく始める（2026年11月12日 実装）
+
+公開の URL に置いた管理画面を、ほかの人にも試してもらうための入口。ログイン画面の「新しく始める」から、組織名・メールアドレス・パスワード（12文字以上）を入れると、新しい組織とその owner を作り、そのままログインして「はじめての設定」（§13）に進む。
+
+- **既定では使えない**：環境変数 `ALLOW_SIGNUP=1` のときだけ、ログイン画面にボタンを出し、`POST /admin/signup` を受け付ける（`GET /admin/signup` は `{ enabled }` を返す）。手元のサーバーや本当に組織で使う置き場所では、入れないままにする。
+- **組織どうしは見えない**：管理画面の API は、すべてログインした管理者の組織で絞っている（ポリシー・配布・登録トークン・管理者・利用記録・適用状況・変更履歴）。登録トークンも組織に結び付くので、拡張から届く記録もその組織にしか入らない。`tests/unit/signup.test.ts` で、後から作った組織から最初の組織のデータが見えず、変えられないことを確かめている。
+- **乱用を抑える**：組織の数の上限（`SIGNUP_MAX_ORGS`、既定 100）と、全体で1時間に作れる数（`SIGNUP_PER_HOUR`、既定 10）を超えると断る。数えるのは `organizations.created_at` だけで、IP アドレスなどは持たない。無料の DB（Neon 1GB）の容量を守るため。
+- **メールアドレスは確かめない**：メールを送る仕組みを持たない（費用をかけない）ため、入れたメールアドレスが本人のものかは確かめない。ログインの ID としてだけ使う。すでに使われているメールアドレスでは作れない（どの組織のものかは返さない）。
+- **作ったときの記録**：変更履歴に `organization.signup` を残す。パスワードはハッシュ（scrypt）だけを置く。
+- 組織を消す画面はまだない。
+
