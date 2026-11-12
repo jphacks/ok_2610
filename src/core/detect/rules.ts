@@ -243,6 +243,16 @@ const RULES: Rule[] = [
     evidence: label('直前に「〒」または「郵便番号」'),
   },
   {
+    id: 'postal-line',
+    category: 'postalCode',
+    // 履歴書などの PDF では「〒」が線画で描かれて文字として読めず、番号だけの行が住所の行の上に残る
+    re: re(`(?<=^|\\n)[ \\t]*(\\d{3}-?\\d{4})[ \\t]*(?=\\r?\\n[ \\t]*(?:${PREF_ALT}))`),
+    group: 1,
+    tier: TIER.certainRule,
+    certainty: '推定',
+    evidence: pattern('都道府県から始まる住所の行のすぐ上の7桁の番号'),
+  },
+  {
     id: 'ip',
     category: 'ipAddress',
     re: re('(?<![\\d.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)(?![\\d.])'),
@@ -455,7 +465,8 @@ const RULES: Rule[] = [
     id: 'org-form-prefix',
     category: 'orgName',
     // 法人の種類は名前の先頭にある（「三つ葉商事株式会社 経営企画室」の後半を社名にしない）。改行はまたがない
-    re: re(`(?<![${NAME_CH}])(?:${ORG_FORM})[ \\u3000]?(?:${HIRA_NAME})?[${NAME_CH}]{1,20}`),
+    // 名前がひらがなで始まり途中に「の」を含むもの（株式会社さくらのデザイン）も拾う
+    re: re(`(?<![${NAME_CH}])(?:${ORG_FORM})[ \\u3000]?(?:(?!さん|さま|ちゃん|くん)${HIRA_NAME}(?:の(?=[${NAME_CH}]))?)?[${NAME_CH}]{1,20}`),
     tier: TIER.heuristicRule,
     certainty: '確定',
     evidence: pattern('法人の種類（株式会社など）を含む'),
@@ -469,6 +480,8 @@ const RULES: Rule[] = [
     tier: TIER.heuristicRule,
     certainty: '確定',
     evidence: pattern('法人の種類（株式会社など）を含む'),
+    // 数字だけの前置き（履歴書の「2024 5 株式会社…」の月）は社名ではない。後ろに名前が続く形は org-form-prefix で拾う
+    validate: (v) => !/^[0-9]+[ \u3000]?(?:株式会社|有限会社|合同会社|（株）|\(株\)|（有）|\(有\))$/u.test(v),
   },
   {
     id: 'org-suffix',

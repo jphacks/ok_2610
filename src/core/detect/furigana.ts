@@ -16,6 +16,9 @@ export const READING_DETAILS = {
   paren: '氏名の直後の括弧の中の読み仮名',
 } as const;
 
+/** 住所のすぐ上に書かれた読み仮名（履歴書の「ふりがな」欄）。読みからも住所が分かるので住所として隠す */
+export const ADDRESS_READING_DETAIL = '住所のすぐ上に書かれた読み仮名';
+
 const READING_DETAIL_SET = new Set<string>(Object.values(READING_DETAILS));
 
 export function isReadingEvidence(evidence: Evidence[]): boolean {
@@ -74,14 +77,14 @@ function isReading(value: string): boolean {
   return !NOT_READING.test(value);
 }
 
-function span(start: number, end: number, detail: string, certainty: Span['certainty']): Span {
+function span(start: number, end: number, detail: string, certainty: Span['certainty'], category: Span['category'] = 'personName'): Span {
   return {
     start,
     end,
-    category: 'personName',
+    category,
     source: 'rule',
     certainty,
-    evidence: [{ kind: detail === READING_DETAILS.ruby || detail === READING_DETAILS.paren ? 'context' : 'label', detail }],
+    evidence: [{ kind: detail === READING_DETAILS.ruby || detail === READING_DETAILS.paren || detail === ADDRESS_READING_DETAIL ? 'context' : 'label', detail }],
     tier: TIER.certainRule,
   };
 }
@@ -171,7 +174,8 @@ export function detectFurigana(text: string): Span[] {
  */
 export function readingSpans(merged: MergedSpan[], text: string): Span[] {
   const norm = normalizeForDetection(text);
-  const covered = (s: number, e: number) => merged.some((m) => m.start < e && s < m.end);
+  // NER などが読みそのものを人名として拾っていたら、同じ範囲に読みの根拠を足す（氏名と同じ人物に結びつけるため）
+  const covered = (s: number, e: number) => merged.some((m) => m.start < e && s < m.end && !(m.start === s && m.end === e && m.categories.includes('personName')));
   const out: Span[] = [];
   const seen = new Set<string>();
   const push = (s: number, e: number, detail: string) => {
@@ -214,6 +218,33 @@ export function readingSpans(merged: MergedSpan[], text: string): Span[] {
     const sameShape = nameParts.length >= 2 && nameParts.length === readingParts.length;
     if (!sameShape && rest) continue;
     push(r.start, r.end, READING_DETAILS.ruby);
+  }
+
+  // 住所のすぐ上の行の読み仮名（間に郵便番号だけの行があってもよい）:
+  // 「ほっかいどう さっぽろし ちゅうおうく\n〒0600001\n北海道札幌市中央区…」
+  const addressLines = new Set<number>();
+  for (const m of merged) {
+    if (!m.categories.some((c) => c === 'address' || c === 'place')) continue;
+    const li = lineOf(m.start);
+    if (li <= 0 || addressLines.has(li)) continue;
+    const line = trimRange(norm, ls[li]!.start, ls[li]!.end);
+    // 住所が行の先頭から始まるときだけ（文の途中の地名の上の行は読みではない）
+    if (line.start !== m.start || !HAN.test(norm.slice(m.start, m.end))) continue;
+    addressLines.add(li);
+    let j = li - 1;
+    const prev = trimRange(norm, ls[j]!.start, ls[j]!.end);
+    if (/^〒?\s?\d{3}-?\d{4}$/u.test(norm.slice(prev.start, prev.end))) j--;
+    if (j < 0) continue;
+    const r = trimRange(norm, ls[j]!.start, ls[j]!.end);
+    const reading = norm.slice(r.start, r.end);
+    const compact = reading.replace(/ /g, '');
+    if (compact.length < 3 || compact.length > 60 || !KANA_ONLY.test(reading)) continue;
+    // 地名は「ふくおか」「しが」のように助詞と同じ音で終わるので、SENTENCE_END ではなく文末の形だけを除く
+    if (NOT_READING.test(reading) || /(?:です|ます|でした|ました|ください)$/u.test(reading) || LABEL_START_RE.test(reading)) continue;
+    const key = `${r.start}:${r.end}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(span(r.start, r.end, ADDRESS_READING_DETAIL, '推定', 'address'));
   }
   return out;
 }
