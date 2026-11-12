@@ -9,7 +9,7 @@ const SAFE = /^[A-Za-z0-9._-]{1,32}$/;
 
 const firstIssue = (e: unknown, fallback: string) => (e instanceof ApiError && e.issues[0] ? e.issues[0].message : fallback);
 
-export function Admins({ me }: { me: Me }) {
+export function Admins({ me, onOrganizationDeleted }: { me: Me; onOrganizationDeleted: () => void }) {
   const [admins, setAdmins] = useState<AdminAccount[]>([]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -117,6 +117,52 @@ export function Admins({ me }: { me: Me }) {
           </tbody>
         </table>
       </div>
+
+      <DeleteOrganization me={me} onDeleted={onOrganizationDeleted} />
     </section>
+  );
+}
+
+/** 組織を消す（SERVER_DESIGN.md §15-1）。組織名とパスワードを入れ直してもらってから、すべてのデータを消す */
+function DeleteOrganization({ me, onDeleted }: { me: Me; onDeleted: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.deleteOrganization({ organizationName: name, password });
+      onDeleted();
+    } catch (e) {
+      setError(firstIssue(e, '消せませんでした。'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2>組織を消す</h2>
+      <p className="hint">組織「{me.organization}」と、そのすべてのデータ（管理者・ポリシー・配布・登録トークン・部署・利用記録・適用状況・変更履歴）を消します。元に戻せません。配った端末は登録トークンが使えなくなり、保存済みの版を使い終えると出力を止めます。</p>
+      {!open ? (
+        <button type="button" className="danger" onClick={() => setOpen(true)}>組織を消す…</button>
+      ) : (
+        <form className="inline-form" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+          <label className="field"><span>確かめのため、組織名「{me.organization}」を入れてください</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" required />
+          </label>
+          <label className="field"><span>あなたのパスワード</span>
+            <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          </label>
+          <button type="button" onClick={() => { setOpen(false); setName(''); setPassword(''); setError(null); }}>キャンセル</button>
+          <button type="submit" className="danger" disabled={busy || name.trim() !== me.organization || !password}>すべて消す</button>
+        </form>
+      )}
+      {error && <p className="banner danger" role="alert">{error}</p>}
+    </div>
   );
 }

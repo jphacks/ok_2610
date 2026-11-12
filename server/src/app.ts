@@ -70,6 +70,7 @@ const AssignmentSchema = z.strictObject({
   minExtensionVersion: z.string().regex(/^\d+\.\d+\.\d+$/).nullable().optional(),
 });
 const SettingsSchema = z.strictObject({ immediateStop: z.boolean() });
+const DeleteOrganizationSchema = z.strictObject({ organizationName: z.string().max(200), password: z.string().min(1).max(256) });
 const SignupSchema = z.strictObject({
   organization: z.string().trim().min(1).max(60),
   email: z.email().max(254),
@@ -478,6 +479,25 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
     return c.body(null, 204);
   });
 
+  // ---- 組織を消す（owner だけ。SERVER_DESIGN.md §15-1） ----------------------------------------
+  // 確かめのため、組織名とパスワードを入れ直してもらう。組織にぶら下がるデータをすべて1つのトランザクションで消す
+  app.delete('/admin/organization', atLeast('owner'), async (c) => {
+    const parsed = DeleteOrganizationSchema.safeParse(await readJson(c));
+    if (!parsed.success) return c.body(null, 400);
+    const admin = c.get('admin');
+    const org = (await db.one<{ name: string }>('SELECT name FROM organizations WHERE id = $1', [admin.orgId]))!;
+    if (parsed.data.organizationName.trim() !== org.name) {
+      return c.json({ issues: [{ path: 'organizationName', message: '組織名が一致しません。' }] }, 400);
+    }
+    const row = await db.one<{ password_hash: string }>('SELECT password_hash FROM admins WHERE id = $1', [admin.id]);
+    if (!row || !(await verifyPassword(parsed.data.password, row.password_hash))) {
+      return c.json({ issues: [{ path: 'password', message: 'パスワードが違います。' }] }, 403);
+    }
+    await deleteOrganization(db, admin.orgId);
+    deleteCookie(c, SESSION_COOKIE, { path: '/' });
+    return c.body(null, 204);
+  });
+
   // ---- 登録トークン ------------------------------------------------------------------------
   app.get('/admin/tokens', atLeast('policy_admin'), async (c) => {
     const rows = await db.query('SELECT id, label, department, created_at, revoked_at FROM org_tokens WHERE org_id = $1 ORDER BY id DESC', [c.get('admin').orgId]);
@@ -601,6 +621,21 @@ function googleFormat(value: Record<string, unknown>): Record<string, { Value: u
 }
 
 /** 初回起動用。組織と最初の管理者（owner）を作る */
+/**
+ * 組織と、その組織にぶら下がるデータをすべて消す（管理者・セッション・ログインの失敗・登録トークン・ポリシー・配布・
+ * 部署・利用記録・適用状況・変更履歴）。外部キーの順に、1つのトランザクションで消す
+ */
+export async function deleteOrganization(db: Db, orgId: number): Promise<void> {
+  await db.tx(async (t) => {
+    await t.run('DELETE FROM login_failures WHERE email IN (SELECT email FROM admins WHERE org_id = $1)', [orgId]);
+    await t.run('DELETE FROM admin_sessions WHERE admin_id IN (SELECT id FROM admins WHERE org_id = $1)', [orgId]);
+    for (const table of ['policy_assignments', 'departments', 'device_status', 'usage_events', 'audit_log', 'org_tokens', 'policies', 'admins']) {
+      await t.run(`DELETE FROM ${table} WHERE org_id = $1`, [orgId]); // usage_events を消すと、種類ごとの件数・止めた理由も消える（ON DELETE CASCADE）
+    }
+    await t.run('DELETE FROM organizations WHERE id = $1', [orgId]);
+  });
+}
+
 export async function createOrganization(db: Db, name: string, email: string, password: string, now = new Date()): Promise<number> {
   const passwordHash = await hashPassword(password);
   return db.tx(async (t) => {
