@@ -76,6 +76,10 @@ function Login({ onDone }: { onDone: (me: Me) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [signupEnabled, setSignupEnabled] = useState(false);
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  useEffect(() => { api.signupStatus().then((s) => setSignupEnabled(s.enabled)).catch(() => setSignupEnabled(false)); }, []);
+  if (mode === 'signup') return <Signup onDone={onDone} onCancel={() => setMode('login')} />;
   async function submit() {
     setError(null);
     try {
@@ -93,6 +97,52 @@ function Login({ onDone }: { onDone: (me: Me) => void }) {
         <label className="field"><span>パスワード</span><input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
         {error && <p className="banner danger" role="alert">{error}</p>}
         <button type="submit" className="primary">ログイン</button>
+        {signupEnabled && (
+          <p className="hint">はじめて使う組織ですか？ <button type="button" className="ghost" onClick={() => setMode('signup')}>新しく始める</button></p>
+        )}
+      </form>
+    </main>
+  );
+}
+
+/** 新しい組織と、その最初の管理者（owner）を作る（SERVER_DESIGN.md §15）。作ったらそのままログインし、はじめての設定へ進む */
+function Signup({ onDone, onCancel }: { onDone: (me: Me) => void; onCancel: () => void }) {
+  const [organization, setOrganization] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const problems = [
+    ...(password && password.length < 12 ? ['パスワードは12文字以上にしてください（誰でも開ける URL なので長めに）'] : []),
+    ...(confirm && confirm !== password ? ['確認のパスワードが一致しません'] : []),
+  ];
+  async function submit() {
+    if (problems.length || !confirm) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api.signup({ organization: organization.trim(), email: email.trim(), password });
+      onDone(await api.me());
+    } catch (e) {
+      setError(e instanceof ApiError && e.issues[0] ? e.issues[0].message : '作れませんでした。入力を確かめてください。');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <main className="login">
+      <form className="card" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+        <h1>新しく始める</h1>
+        <p className="hint">組織と、その最初の管理者（あなた）を作ります。ほかの組織のデータは見えず、あなたの組織のデータもほかの組織からは見えません。</p>
+        <label className="field"><span>組織名</span><input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={60} required /></label>
+        <label className="field"><span>メールアドレス（ログインに使う）</span><input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+        <label className="field"><span>パスワード（12文字以上）</span><input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={12} required /></label>
+        <label className="field"><span>パスワード（確認）</span><input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required /></label>
+        {problems.length > 0 && <ul className="banner danger" role="alert">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
+        {error && <p className="banner danger" role="alert">{error}</p>}
+        <button type="submit" className="primary" disabled={busy || problems.length > 0 || !confirm}>組織を作って始める</button>
+        <button type="button" className="ghost" onClick={onCancel}>ログインに戻る</button>
       </form>
     </main>
   );

@@ -77,6 +77,8 @@ export const api = {
   me: () => call<Me>('/admin/me'),
   login: (email: string, password: string) => call<{ email: string }>('/admin/session', json('POST', { email, password })),
   logout: () => call<void>('/admin/session', { method: 'DELETE' }),
+  signupStatus: () => call<{ enabled: boolean }>('/admin/signup'),
+  signup: (s: { organization: string; email: string; password: string }) => call<{ email: string }>('/admin/signup', json('POST', s)),
   stats: (q: { from: string; to: string; department?: string }) =>
     call<Stats>(`/admin/stats?${new URLSearchParams({ from: q.from, to: q.to, ...(q.department ? { department: q.department } : {}) })}`),
   coverage: (department?: string) => call<Coverage>(`/admin/coverage${department ? `?${new URLSearchParams({ department })}` : ''}`),

@@ -29,6 +29,16 @@ export type AppOptions = {
   signer?: Signer;
   /** 拡張に配る初期設定の送信先。省略すると要求の URL のオリジンを使う */
   publicOrigin?: string;
+  /** ログイン画面から、新しい組織と owner を自分で作れるようにする（SERVER_DESIGN.md §15）。省略すると作れない */
+  signup?: SignupOptions;
+};
+
+export type SignupOptions = {
+  enabled: boolean;
+  /** 組織の数の上限。これ以上は受け付けない（無料の DB の容量を守る） */
+  maxOrganizations: number;
+  /** 直近1時間に作れる組織の数（全体で数える。IP アドレスなどは持たない） */
+  perHour: number;
 };
 
 export const ROLES = ['owner', 'policy_admin', 'viewer', 'dept_viewer'] as const;
@@ -60,6 +70,11 @@ const AssignmentSchema = z.strictObject({
   minExtensionVersion: z.string().regex(/^\d+\.\d+\.\d+$/).nullable().optional(),
 });
 const SettingsSchema = z.strictObject({ immediateStop: z.boolean() });
+const SignupSchema = z.strictObject({
+  organization: z.string().trim().min(1).max(60),
+  email: z.email().max(254),
+  password: z.string().min(12).max(256),
+});
 const roleFields = {
   role: z.enum(ROLES),
   department: department.nullable().optional(),
@@ -91,7 +106,7 @@ const INSERT_EVENT = `INSERT INTO usage_events
   (event_id, org_id, kind, occurred_hour, extension_version, policy_version, department, stage, purpose, destination, risk_level, manual_ops, ner, nano, received_at)
   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) ON CONFLICT (event_id) DO NOTHING`;
 
-export function createApp({ db, now = () => new Date(), extensionIds = [], secureCookies = false, signer = ephemeralSigner(), publicOrigin }: AppOptions) {
+export function createApp({ db, now = () => new Date(), extensionIds = [], secureCookies = false, signer = ephemeralSigner(), publicOrigin, signup }: AppOptions) {
   const app = new Hono<Env>();
   const iso = () => now().toISOString();
 
@@ -253,11 +268,47 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
       return c.body(null, 401);
     }
     await db.run('DELETE FROM login_failures WHERE email = $1', [email]);
-    const sessionId = newSessionId();
-    const expires = new Date(t + SESSION_HOURS * 60 * 60_000);
-    await db.run('INSERT INTO admin_sessions (id_hash, admin_id, expires_at) VALUES ($1, $2, $3)', [sha256(sessionId), admin.id, expires.toISOString()]);
-    setCookie(c, SESSION_COOKIE, sessionId, { httpOnly: true, sameSite: 'Strict', secure: secureCookies, path: '/', expires });
+    await startSession(c, Number(admin.id));
     return c.json({ email });
+  });
+
+  async function startSession(c: Context, adminId: number) {
+    const sessionId = newSessionId();
+    const expires = new Date(now().getTime() + SESSION_HOURS * 60 * 60_000);
+    await db.run('INSERT INTO admin_sessions (id_hash, admin_id, expires_at) VALUES ($1, $2, $3)', [sha256(sessionId), adminId, expires.toISOString()]);
+    setCookie(c, SESSION_COOKIE, sessionId, { httpOnly: true, sameSite: 'Strict', secure: secureCookies, path: '/', expires });
+  }
+
+  // ---- 新しく始める（組織と owner を自分で作る。SERVER_DESIGN.md §15） ---------------------------
+  // 作った組織は、ほかの組織のデータ（ポリシー・トークン・記録・管理者）を見られない（すべての API を組織で絞っている）
+  app.get('/admin/signup', (c) => c.json({ enabled: !!signup?.enabled }));
+
+  app.post('/admin/signup', async (c) => {
+    if (!signup?.enabled) return c.body(null, 404);
+    const parsed = SignupSchema.safeParse(await readJson(c));
+    if (!parsed.success) return c.json({ issues: issues(parsed.error) }, 400);
+    const email = parsed.data.email.toLowerCase();
+    const hourAgo = new Date(now().getTime() - 60 * 60_000).toISOString();
+    const counts = await db.one<{ total: string; recent: string }>(
+      'SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at > $1) AS recent FROM organizations', [hourAgo]);
+    if (Number(counts?.total ?? 0) >= signup.maxOrganizations) {
+      return c.json({ issues: [{ path: '', message: '新しい組織の受け付けを締め切りました。' }] }, 403);
+    }
+    if (Number(counts?.recent ?? 0) >= signup.perHour) {
+      return c.json({ issues: [{ path: '', message: '新しく始める人が続いています。しばらく待ってからお試しください。' }] }, 429);
+    }
+    const taken = { issues: [{ path: 'email', message: 'このメールアドレスは使えません。ほかのメールアドレスにしてください。' }] };
+    if (await db.one('SELECT 1 FROM admins WHERE email = $1', [email])) return c.json(taken, 409);
+    let orgId: number;
+    try {
+      orgId = await createOrganization(db, parsed.data.organization, email, parsed.data.password, now());
+    } catch {
+      return c.json(taken, 409); // 同時に同じメールアドレスで作られた（admins.email は一意）
+    }
+    const owner = (await db.one<{ id: number }>('SELECT id FROM admins WHERE email = $1', [email]))!;
+    await audit({ id: Number(owner.id), orgId, email, role: 'owner', department: null }, 'organization.signup', { organization: parsed.data.organization });
+    await startSession(c, Number(owner.id));
+    return c.json({ email }, 201);
   });
 
   const requireAdmin = createMiddleware<Env>(async (c, next) => {
@@ -272,7 +323,9 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
     await next();
   });
 
-  app.use('/admin/*', async (c, next) => (c.req.path === '/admin/session' && c.req.method === 'POST' ? next() : requireAdmin(c, next)));
+  // ログインと「新しく始める」だけは、ログインしていなくても使える
+  const isPublic = (c: Context) => (c.req.path === '/admin/session' && c.req.method === 'POST') || c.req.path === '/admin/signup';
+  app.use('/admin/*', async (c, next) => (isPublic(c) ? next() : requireAdmin(c, next)));
 
   /** この役割以上でないと使えない */
   const atLeast = (min: Role) => createMiddleware<Env>(async (c, next) => (RANK[c.get('admin').role] >= RANK[min] ? next() : c.body(null, 403)));
