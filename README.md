@@ -66,22 +66,20 @@
 ほかの組織のデータは見えず、自分の組織のデータもほかの組織からは見えません。いらなくなったら「管理者」の画面のいちばん下の「**組織を消す**」で、すべてのデータを消せます。
 
 ### 2. 管理画面につながる拡張を用意する
-拡張は、つなぐ管理画面の URL をビルドのときに入れておく必要があります（リリースの zip には入っていないので、つながりません）。[開発の始め方](#開発の始め方)の準備をしてから、PowerShell で次を実行します。
+拡張は、つなぐ管理画面の URL をビルドのときに入れておく必要があります。[最新のリリース](https://github.com/jphacks/ok_2610/releases/latest) の「Assets」から、管理画面につながる **`text-cleaner-<版>-chrome-admin.zip`** と、つなぐためのスクリプト **`connect-extension-windows.ps1`** をダウンロードします（`-admin` の付かない zip ではつながりません）。
 
-```powershell
-$env:WXT_REPORT_ORIGIN='https://text-cleaner-admin.vercel.app'; npm run build
-```
+zip を展開し、「[2. Chrome に読み込む](#2-chrome-に読み込む)」と同じ手順で読み込んで、`chrome://extensions` のテキストクリーナーの欄に出る **ID**（英字32文字）を控えます。
 
-できた `.output/chrome-mv3` を「[2. Chrome に読み込む](#2-chrome-に読み込む)」と同じ手順で読み込み、`chrome://extensions` のテキストクリーナーの欄に出る **ID**（英字32文字）を控えます。
+> 自分でビルドするときは、[開発の始め方](#開発の始め方)の準備をしてから、PowerShell で `$env:WXT_REPORT_ORIGIN='https://text-cleaner-admin.vercel.app'; npm run build` を実行し、できた `.output/chrome-mv3` を読み込みます。スクリプトはリポジトリの `scripts\connect-extension-windows.ps1` です。
 
 ### 3. 拡張を組織につなぐ（Windows・1台ずつ）
 会社では MDM（Intune・Google 管理コンソールなど）が自動で行う部分です。試すときは、つなぎたい PC ごとに次を行います。
 
 1. 管理画面の「**登録トークン**」で用途の名前（例「自分のPC」）を入れて「発行する」を押し、「**そのままの JSON**」の「コピー」を押す（中身にトークンが入るので、ほかへ貼らない）
-2. スタートメニューで PowerShell を右クリックして「**管理者として実行**」で開き、リポジトリのフォルダで次を実行する（`<拡張のID>` は控えた ID に置き換える）
+2. スタートメニューで PowerShell を右クリックして「**管理者として実行**」で開き、ダウンロードしたスクリプトのあるフォルダで次を実行する（`<拡張のID>` は控えた ID に置き換える）
 
    ```powershell
-   powershell -ExecutionPolicy Bypass -File scripts\connect-extension-windows.ps1 -ExtensionId <拡張のID>
+   powershell -ExecutionPolicy Bypass -File .\connect-extension-windows.ps1 -ExtensionId <拡張のID>
    ```
 
 3. Chrome で `chrome://policy` を開き、「**ポリシーを再読み込み**」を押す。テキストクリーナーの欄に `management` が出れば届いている
