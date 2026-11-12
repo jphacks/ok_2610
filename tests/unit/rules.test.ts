@@ -16,6 +16,10 @@ describe('直接識別子（FR-01）', () => {
     expect(found(t, 'postalCode')).toEqual(['150-0001']);
     expect(found(t, 'url')).toEqual(['https://example.com/a']);
   });
+  test('「〒」が読めない PDF: 住所の行のすぐ上の7桁の番号を郵便番号にする', () => {
+    expect(found('0600001\n北海道札幌市中央区北一条西2-1', 'postalCode')).toEqual(['0600001']);
+    expect(found('注文番号\n0600001\n発送済み', 'postalCode')).toEqual([]);
+  });
   test('全角の数字でも検出し、原文の位置で返す', () => {
     const t = '電話は０９０－１２３４－５６７８です';
     expect(found(t, 'phone')).toEqual(['０９０－１２３４－５６７８']);
@@ -44,6 +48,10 @@ describe('人名', () => {
 describe('組織・店舗・地域', () => {
   test('長音符を含む社名を途中で切らない（前のツールで漏れた）', () => {
     expect(found('株式会社ABCソリューションズは', 'orgName')).toEqual(['株式会社ABCソリューションズ']);
+  });
+  test('履歴書の職歴: 月の数字を社名にせず、ひらがなと「の」を含む社名を拾う', () => {
+    expect(found('2024 5 株式会社さくらのデザイン（カフェ） 入社', 'orgName')).toEqual(['株式会社さくらのデザイン']);
+    expect(found('株式会社さんの担当です', 'orgName')).toEqual([]);
   });
   test('店舗名は拾い、「当店」「来店」などは拾わない', () => {
     expect(found('渋谷店で購入し、当店に来店しました', 'store')).toEqual(['渋谷店']);
