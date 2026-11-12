@@ -53,6 +53,7 @@ export const AUDIT_LABEL: Record<string, string> = {
   'token.create': '登録トークンを発行',
   'token.revoke': '登録トークンを失効',
   'settings.immediateStop': '「すぐ止める」を切り替え',
+  'settings.developerMode': '開発者モードを切り替え',
   'admin.create': '管理者を追加',
   'admin.update': '管理者の役割を変更',
   'admin.disable': '管理者を無効化',

@@ -222,8 +222,13 @@ const V3 = `
 ALTER TABLE organizations ADD COLUMN immediate_stop BOOLEAN NOT NULL DEFAULT FALSE
 `;
 
+/** 4: 「すぐ止める」を開発者モードに変えた（止めるのではなく、組織の管理から外して個人設定に戻す。§12-8） */
+const V4 = `
+ALTER TABLE organizations RENAME COLUMN immediate_stop TO developer_mode
+`;
+
 /** 試験で適用の順番を確かめるために公開する */
-export const MIGRATIONS = [V1, V2, V3];
+export const MIGRATIONS = [V1, V2, V3, V4];
 
 /** マイグレーションを同時に流さないための鍵（PostgreSQL の advisory lock の番号） */
 const MIGRATION_LOCK = 2610;
