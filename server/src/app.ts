@@ -4,7 +4,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { cors } from 'hono/cors';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
-import { base64UrlEncode, DeviceStatusSchema, PolicyPayloadSchema, StopNoticeSchema, TOKEN_PATTERN, type PolicyPayload } from '../../shared/management';
+import { base64UrlEncode, DeviceStatusSchema, PolicyPayloadSchema, ReleaseNoticeSchema, TOKEN_PATTERN, type PolicyPayload } from '../../shared/management';
 import { SAFE_TOKEN, UsageBatchSchema } from '../../shared/usage-event';
 import { PolicySchema, resolvePolicy } from '../../src/core/policy';
 import { computeCoverage } from './coverage';
@@ -69,7 +69,7 @@ const AssignmentSchema = z.strictObject({
   policyId: z.number().int().positive(),
   minExtensionVersion: z.string().regex(/^\d+\.\d+\.\d+$/).nullable().optional(),
 });
-const SettingsSchema = z.strictObject({ immediateStop: z.boolean() });
+const SettingsSchema = z.strictObject({ developerMode: z.boolean() });
 const DeleteOrganizationSchema = z.strictObject({ organizationName: z.string().max(200), password: z.string().min(1).max(256) });
 const SignupSchema = z.strictObject({
   organization: z.string().trim().min(1).max(60),
@@ -145,7 +145,7 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
     return db.one<Token>('SELECT id, org_id, department, token_hash FROM org_tokens WHERE token_hash = $1 AND revoked_at IS NULL', [sha256(bearer)]);
   }
 
-  /** 失効したものも含めて探す。「すぐ止める」設定の組織で、失効したトークンの端末に止める知らせを返すため */
+  /** 失効したものも含めて探す。開発者モードの組織で、失効したトークンの端末に外す知らせを返すため */
   async function tokenWithRevoked(c: Context): Promise<(Token & { revoked: boolean }) | undefined> {
     const bearer = c.req.header('authorization')?.match(/^Bearer (\S+)$/)?.[1];
     if (!bearer || !TOKEN_PATTERN.test(bearer)) return undefined;
@@ -153,9 +153,9 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
     return row ? { id: row.id, org_id: row.org_id, department: row.department, token_hash: row.token_hash, revoked: row.revoked_at !== null } : undefined;
   }
 
-  async function immediateStop(orgId: number): Promise<boolean> {
-    const row = await db.one<{ immediate_stop: boolean }>('SELECT immediate_stop FROM organizations WHERE id = $1', [orgId]);
-    return Boolean(row?.immediate_stop);
+  async function developerMode(orgId: number): Promise<boolean> {
+    const row = await db.one<{ developer_mode: boolean }>('SELECT developer_mode FROM organizations WHERE id = $1', [orgId]);
+    return Boolean(row?.developer_mode);
   }
 
   app.post('/v1/events', bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.body(null, 413) }), async (c) => {
@@ -214,11 +214,11 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
     const payload = token.revoked ? null : await policyPayload(token);
     if (!payload) {
       // 既定では、失効は 401・配布なしは 404 を返し、端末は手元の版を期限まで使う。
-      // 「すぐ止める」設定では、署名付きの知らせを 410 で返し、端末は受け取ったその場で止まる
-      if (!(await immediateStop(token.org_id))) return c.body(null, token.revoked ? 401 : 404);
-      const notice = StopNoticeSchema.parse({
+      // 開発者モードでは、署名付きの知らせを 410 で返し、端末は受け取ったその場で組織の管理から外れ、個人設定で動く
+      if (!(await developerMode(token.org_id))) return c.body(null, token.revoked ? 401 : 404);
+      const notice = ReleaseNoticeSchema.parse({
         schemaVersion: 1,
-        kind: 'stop',
+        kind: 'release',
         orgId: Number(token.org_id),
         tokenHash: token.token_hash,
         reason: token.revoked ? 'revoked' : 'unassigned',
@@ -465,16 +465,16 @@ export function createApp({ db, now = () => new Date(), extensionIds = [], secur
     return c.body(null, removed ? 204 : 404);
   });
 
-  // ---- 組織の設定（すぐ止める） ---------------------------------------------------------------
-  app.get('/admin/settings', atLeast('viewer'), async (c) => c.json({ immediateStop: await immediateStop(c.get('admin').orgId) }));
+  // ---- 組織の設定（開発者モード） -------------------------------------------------------------
+  app.get('/admin/settings', atLeast('viewer'), async (c) => c.json({ developerMode: await developerMode(c.get('admin').orgId) }));
 
   app.put('/admin/settings', atLeast('policy_admin'), async (c) => {
     const parsed = SettingsSchema.safeParse(await readJson(c));
     if (!parsed.success) return c.body(null, 400);
     const admin = c.get('admin');
     await db.tx(async (t) => {
-      await t.run('UPDATE organizations SET immediate_stop = $1 WHERE id = $2', [parsed.data.immediateStop, admin.orgId]);
-      await audit(admin, 'settings.immediateStop', { immediateStop: parsed.data.immediateStop }, t);
+      await t.run('UPDATE organizations SET developer_mode = $1 WHERE id = $2', [parsed.data.developerMode, admin.orgId]);
+      await audit(admin, 'settings.developerMode', { developerMode: parsed.data.developerMode }, t);
     });
     return c.body(null, 204);
   });

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { compareVersions, ManagementBootstrapSchema, TOKEN_PATTERN, type ManagementBootstrap, type PolicyPayload, type PolicySource, type PolicyState, type StopNotice } from '../../shared/management';
+import { compareVersions, ManagementBootstrapSchema, TOKEN_PATTERN, type ManagementBootstrap, type PolicyPayload, type PolicySource, type PolicyState, type ReleaseNotice } from '../../shared/management';
 import { SAFE_TOKEN } from '../../shared/usage-event';
 import { ALL_CATEGORIES } from './model/categories';
 import type { Category, EngineId, Stage } from './model/types';
@@ -155,8 +155,8 @@ export type ServerPolicyCheck = {
   payload: PolicyPayload | null;
   /** 手元にあるが、署名・形式が合わない */
   tampered: boolean;
-  /** 署名を確かめた「止める」知らせ（すぐ止める設定の組織が、失効・配布の取り下げのときに返す）。なければ null */
-  stop: StopNotice | null;
+  /** 署名を確かめた「外す」知らせ（開発者モードの組織が、失効・配布の取り下げのときに返す）。なければ null */
+  release: ReleaseNotice | null;
   /** 初期設定の登録トークンの SHA-256（16進） */
   tokenHash: string;
   extensionVersion: string;
@@ -165,19 +165,16 @@ export type ServerPolicyCheck = {
 
 /**
  * サーバーから受け取ったポリシーを使ってよいかを決める。使えないときは理由を付けて止める（個人設定へ弱めない）。
- * 状態は管理画面の適用状況にも使う（missing・invalid・expired・outdated・stopped）。
+ * 状態は管理画面の適用状況にも使う（missing・invalid・expired・outdated）。
  */
 export function serverPolicyInput(c: ServerPolicyCheck): PolicyInput {
   const error = (state: Exclude<PolicyState, 'active'>, reason: string): PolicyInput => ({ kind: 'error', source: 'server', state, reason });
   if (!c.buildOrigin || new URL(c.bootstrap.endpoint).origin !== c.buildOrigin) {
     return error('invalid', '組織の管理サーバーが、この版の拡張で許可した送信先と一致しません。管理者に連絡してください。');
   }
+  // 開発者モードで管理者が外した端末は、組織の管理から外れて個人設定で動く。
   // 宛先が今の登録トークンと合う知らせだけを使う（トークンを貼り替えれば、新しいトークンで受け取り直す）
-  if (c.stop && c.stop.tokenHash === c.tokenHash) {
-    return error('stopped', c.stop.reason === 'revoked'
-      ? '管理者がこの端末の登録を止めたため、組織ポリシーを使えません。管理者に連絡してください。'
-      : '管理者がこの部署への組織ポリシーの配布を止めたため、使えません。管理者に連絡してください。');
-  }
+  if (c.release && c.release.tokenHash === c.tokenHash) return { kind: 'none' };
   if (c.tampered) return error('invalid', '保存されている組織ポリシーの署名を確かめられません。ネットワークにつないで、サイドパネルを開き直してください。');
   const p = c.payload;
   if (!p) return error('missing', '組織ポリシーをまだ受け取っていません。ネットワークにつないで、サイドパネルを開き直してください。');

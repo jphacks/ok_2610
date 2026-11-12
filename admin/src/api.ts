@@ -68,8 +68,8 @@ export type SetupState = {
   complete: boolean;
 };
 
-/** 組織の設定。immediateStop は「すぐ止める」（SERVER_DESIGN.md §12-8） */
-export type Settings = { immediateStop: boolean };
+/** 組織の設定。developerMode は開発者モード（SERVER_DESIGN.md §12-8） */
+export type Settings = { developerMode: boolean };
 
 const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) });
 
