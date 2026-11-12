@@ -64,7 +64,7 @@ export function App() {
         {page === 'policies' && atLeast(me, 'policy_admin') && <Policies />}
         {page === 'assignments' && atLeast(me, 'viewer') && <Assignments canEdit={atLeast(me, 'policy_admin')} />}
         {page === 'tokens' && atLeast(me, 'policy_admin') && <Tokens />}
-        {page === 'admins' && atLeast(me, 'owner') && <Admins me={me} />}
+        {page === 'admins' && atLeast(me, 'owner') && <Admins me={me} onOrganizationDeleted={() => { setMe(null); setPage('overview'); setSetup(null); }} />}
         {page === 'audit' && atLeast(me, 'viewer') && <Audit />}
       </main>
       <footer className="privacy-note">この画面に届くのは、文章を含まない利用記録（種類ごとの件数・出力先・時刻は1時間単位）と、端末ごとのポリシーの版と状態（日付単位、台数の集計だけ）です。</footer>

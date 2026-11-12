@@ -77,6 +77,7 @@ export const api = {
   me: () => call<Me>('/admin/me'),
   login: (email: string, password: string) => call<{ email: string }>('/admin/session', json('POST', { email, password })),
   logout: () => call<void>('/admin/session', { method: 'DELETE' }),
+  deleteOrganization: (d: { organizationName: string; password: string }) => call<void>('/admin/organization', json('DELETE', d)),
   signupStatus: () => call<{ enabled: boolean }>('/admin/signup'),
   signup: (s: { organization: string; email: string; password: string }) => call<{ email: string }>('/admin/signup', json('POST', s)),
   stats: (q: { from: string; to: string; department?: string }) =>
