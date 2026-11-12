@@ -1,6 +1,7 @@
 import { EncryptedPDFError, PDFDocument, PDFRef } from 'pdf-lib';
 import { faceNotes, type FaceBox } from '../face';
 import { imageInfo, ocrText, worthOcr, type ImageEnv, type OcrChar } from './images';
+import { liftInlineImages } from './inline';
 import { flattenAnnotations } from './sanitize';
 import { buildTextModel, pageText, type TextModel } from './textmodel';
 
@@ -59,6 +60,8 @@ export type ImportProgress = (done: number, total: number) => void;
 export async function importPdf(fileName: string, bytes: Uint8Array, env: ImageEnv | null, onProgress?: ImportProgress): Promise<PdfSource> {
   const original = await loadEditable(bytes);
   const flattened = flattenAnnotations(original);
+  // 本文に直接埋め込まれた画像（履歴書の顔写真など）を、ふつうの画像にして OCR・顔の検出・塗りつぶしの対象にする
+  liftInlineImages(original);
   const base = await original.save({ useObjectStreams: false, updateFieldAppearances: false });
   const doc = await loadEditable(base);
   const model = buildTextModel(doc, MAX_PAGES);

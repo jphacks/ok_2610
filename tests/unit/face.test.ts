@@ -1,6 +1,7 @@
 import fontkit from '@pdf-lib/fontkit';
 import { createCanvas, ImageData } from '@napi-rs/canvas';
-import { PDFDocument } from 'pdf-lib';
+import { zlibSync } from 'fflate';
+import { PDFArray, PDFDocument, PDFName } from 'pdf-lib';
 import { afterAll, describe, expect, it } from 'vitest';
 import { crop, faceLabel, faceTarget, findFaceLabels, findFaces, makeFaceDetector, mergeBoxes, padFace, pasteScaled, restoreFaces, tiles, tileSizes, type FaceBox } from '../../src/infra/face';
 import { exportMaskedImage, IMAGE_ONLY_TEXT, importImage, restoreImage, type ImageFileEnv } from '../../src/infra/image/image';
@@ -172,6 +173,42 @@ describe('PDF の中の画像の顔', () => {
     const kept = await exportMaskedPdf(src, result.segments, pdfEnv, [], [0]);
     const [still] = await env.decode(kept.bytes, [imgRef(src.images[0]!)]);
     expect(countRed(still!)).toBeGreaterThan(100 * 100);
+  }, 120_000);
+
+  it('本文に直接埋め込まれた画像（インライン画像）の顔も見つけて塗りつぶす', async () => {
+    // 履歴書の顔写真がインライン画像（BI … ID … EI）で入っている PDF。略号（/W /CS /RGB /F /Fl）で書かれる
+    const w = 160, h = 90;
+    const rgb = new Uint8Array(w * h * 3).fill(255);
+    for (let y = 20; y < 70; y++) for (let x = 60; x < 110; x++) rgb.set([224, 0, 0], (y * w + x) * 3);
+    const enc = new TextEncoder();
+    const head = enc.encode(`q 320 0 0 180 50 500 cm\nBI /W ${w} /H ${h} /CS /RGB /BPC 8 /F /Fl ID `);
+    const data = zlibSync(rgb);
+    const tail = enc.encode('\nEI\nQ\n');
+    const content = new Uint8Array(head.length + data.length + tail.length);
+    content.set(head);
+    content.set(data, head.length);
+    content.set(tail, head.length + data.length);
+    const doc = await PDFDocument.create();
+    doc.registerFontkit(fontkit);
+    const jp = await doc.embedFont(JP_FONT, { subset: true });
+    const page = doc.addPage([595, 842]);
+    page.drawText('履歴書', { x: 50, y: 790, size: 12, font: jp });
+    const contents = page.node.Contents();
+    const stream = doc.context.register(doc.context.stream(content));
+    page.node.set(PDFName.of('Contents'), doc.context.obj([...(contents instanceof PDFArray ? contents.asArray() : contents ? [page.node.get(PDFName.of('Contents'))!] : []), stream]));
+
+    const env: ImageEnv = { ...imageEnv, faces: fakeFaces };
+    const src = await importPdf('履歴書.pdf', await doc.save(), env);
+    expect(src.images).toHaveLength(1);
+    expect(src.images[0]).toMatchObject({ width: w, height: h });
+    expect(src.faces).toHaveLength(1);
+    expect(src.notes.join()).not.toContain('直接埋め込まれた');
+
+    const result = await run(src.text, { settings: settings({ labelsOnly: true }) });
+    const masked = await exportMaskedPdf(src, result.segments, { labelFont: async () => new Uint8Array(JP_FONT), images: env });
+    expect(masked.notes.join()).toContain('顔 1 件を塗りつぶしました');
+    const [after] = await env.decode(masked.bytes, [imgRef(src.images[0]!)]);
+    expect(countRed(after!)).toBe(0);
   }, 120_000);
 });
 
