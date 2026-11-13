@@ -118,6 +118,19 @@ describe('ふりがな（読み仮名）', () => {
   });
 });
 
+describe('ふりがな: 見出しのない欄（PDF の中央に写真がある型など）', () => {
+  test('氏名だけの行と読みだけの行が上下に並べば、どちらも同じ人物', async () => {
+    expect(names('履歴書\n清水　結衣\nしみず　ゆい\n生年月日')).toEqual(['清水　結衣', 'しみず　ゆい']);
+    expect(names('なかの　はるか\n中野　遥')).toEqual(['なかの　はるか', '中野　遥']);
+    const { found } = await people('清水　結衣\nしみず　ゆい\n');
+    expect(found.map((f) => f[1])).toEqual(['人物A', '人物A']);
+  });
+  test('語の数が合わない行・見出しの行は氏名にしない', () => {
+    expect(names('学歴 職歴\nがくれき しょくれき')).toEqual([]);
+    expect(names('東京\nとうきょう')).toEqual([]);
+  });
+});
+
 describe('ふりがな: 見出しの語を名前と取り違えない', () => {
   test('「名前\tメール」「氏名\t住所」の見出しの行', () => {
     expect(names('名前\tメール\n')).toEqual([]);

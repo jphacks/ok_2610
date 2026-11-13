@@ -1,5 +1,6 @@
 import type { Category, Span } from '../core/model/types';
 import { TIER } from '../core/model/types';
+import { isFieldLabel } from '../core/detect/furigana';
 import { NON_NAME_BEFORE_HONORIFIC } from '../core/detect/vocab';
 
 // NER の出力を原文上の span に変換する純粋関数（tests/unit/ner-post.test.ts で固定）。
@@ -99,6 +100,11 @@ export function entitiesToSpans(text: string, tokens: NerToken[], offset = 0): S
     // 「御中」「各位」などを人名と判定することがあるため、規則と同じ語彙で外す
     const found = text.slice(start, end);
     if (category === 'personName' && NON_NAME_BEFORE_HONORIFIC.has(found.replace(/\s/gu, ''))) continue;
+    // 履歴書などの欄の見出し（「ふりがな」「フリガナ」）やその一部（「ふり」「りがな」）を人名・組織名・地名と判定することがある。見出しだけの行の中は外す
+    const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+    const lineEnd = text.indexOf('\n', end);
+    const line = text.slice(lineStart, lineEnd < 0 ? undefined : lineEnd).trim();
+    if (line.length <= 10 && isFieldLabel(line)) continue;
     // 社員番号・ユーザーIDなどの英数字（S58330・kenta0412）を人名と判定することがある。隠す必要はあるのでIDとして扱う
     const idLike = category === 'personName' && /^[A-Za-z0-9._-]+$/u.test(found) && /\d/u.test(found);
     // 色の名前（ネイビー・グレー）を組織と判定することがある

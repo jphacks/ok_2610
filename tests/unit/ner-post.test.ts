@@ -59,3 +59,9 @@ test('文の区切りで分割し、位置を保つ', () => {
   expect(chunks.map((c) => c.text).join('')).toBe(long);
   expect(chunks[1]?.offset).toBe(201);
 });
+
+test('履歴書の「ふりがな」の見出しやその一部を人名にしない', () => {
+  const t = 'ふりがな\nやまだ　たろう\n担当 ふりた';
+  const spans = entitiesToSpans(t, [tok(1, 'ふり', 'PER'), tok(2, 'がな', 'PER'), tok(3, 'やまだ', 'PER'), tok(5, 'ふりた', 'PER')]);
+  expect(spans.map((s) => t.slice(s.start, s.end))).toEqual(['やまだ', 'ふりた']);
+});

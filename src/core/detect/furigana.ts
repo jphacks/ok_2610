@@ -13,6 +13,7 @@ export const READING_DETAILS = {
   label: '直前に「ふりがな」などの見出し',
   column: '「フリガナ」などの列の値',
   ruby: '氏名のすぐ上に書かれた読み仮名',
+  below: '氏名のすぐ下に書かれた読み仮名',
   paren: '氏名の直後の括弧の中の読み仮名',
 } as const;
 
@@ -77,6 +78,23 @@ function isReading(value: string): boolean {
   return !NOT_READING.test(value);
 }
 
+/** 姓と名を空白で区切った氏名だけの行（漢字。名はひらがなでもよい。ローマ字の Yamada Taro も） */
+const NAME_LINE = /^(?:\p{Script=Han}{1,4} [\p{Script=Han}\p{Script=Hiragana}]{1,4}|[A-Z][a-z]{1,15} [A-Z][a-z]{1,15})$/u;
+const NAME_PAIR_DETAIL = '読み仮名と上下に並んだ氏名';
+
+/** 氏名の行と上下に並んだ読み仮名か（姓と名の2語で、読みの長さが氏名に見合う） */
+function isPairReading(name: string, reading: string): boolean {
+  // 読みは「はるか」「れな」のように文末と同じ音で終わることがある。氏名の行と並ぶことを手がかりにするので、文末の形では外さない
+  if (!isReading(reading) || /(?:です|ます|でした|ました|ください)$/u.test(reading) || LABEL_START_RE.test(reading) || isFieldLabel(name)) return false;
+  const parts = reading.split(/ +/u);
+  if (parts.length !== 2) return false;
+  // ローマ字の氏名は字数が読みと合わないので、語の数だけで見る
+  if (/^[A-Za-z ]+$/u.test(name)) return true;
+  const n = name.replace(/ /g, '').length;
+  const r = parts.join('').length;
+  return r >= n && r <= n * 4 + 2 && name.split(' ').every((p) => !FIELD_WORDS.has(p));
+}
+
 function span(start: number, end: number, detail: string, certainty: Span['certainty'], category: Span['category'] = 'personName'): Span {
   return {
     start,
@@ -84,7 +102,7 @@ function span(start: number, end: number, detail: string, certainty: Span['certa
     category,
     source: 'rule',
     certainty,
-    evidence: [{ kind: detail === READING_DETAILS.ruby || detail === READING_DETAILS.paren || detail === ADDRESS_READING_DETAIL ? 'context' : 'label', detail }],
+    evidence: [{ kind: detail === READING_DETAILS.ruby || detail === READING_DETAILS.below || detail === READING_DETAILS.paren || detail === ADDRESS_READING_DETAIL || detail === NAME_PAIR_DETAIL ? 'context' : 'label', detail }],
     tier: TIER.certainRule,
   };
 }
@@ -127,6 +145,23 @@ export function detectFurigana(text: string): Span[] {
     // 見出しの直後に空白も区切りもなく値が続くのは「ふりがなをふる」「ふりがなつき」のような文
     if (!/[\s:：]$/u.test(norm.slice(m.index!, s))) continue;
     out.push(span(s, e, READING_DETAILS.label, '確定'));
+  }
+
+  // 見出しのない欄（PDF・画像）: 漢字の氏名だけの行と、姓・名の区切りの数が同じ読み仮名だけの行が上下に並ぶ
+  // （「山田 太郎\nやまだ たろう」「やまだ たろう\n山田 太郎」）。どちらも氏名にする
+  {
+    const ls = lines(norm);
+    for (let i = 0; i + 1 < ls.length; i++) {
+      const a = trimRange(norm, ls[i]!.start, ls[i]!.end);
+      const b = trimRange(norm, ls[i + 1]!.start, ls[i + 1]!.end);
+      const ta = norm.slice(a.start, a.end);
+      const tb = norm.slice(b.start, b.end);
+      const pair = NAME_LINE.test(ta) && isPairReading(ta, tb) ? { name: a, reading: b, detail: READING_DETAILS.below }
+        : NAME_LINE.test(tb) && isPairReading(tb, ta) ? { name: b, reading: a, detail: READING_DETAILS.ruby } : null;
+      if (!pair) continue;
+      out.push(span(pair.name.start, pair.name.end, NAME_PAIR_DETAIL, '推定'));
+      out.push(span(pair.reading.start, pair.reading.end, pair.detail, '推定'));
+    }
   }
 
   // 表の列（Excel・CSV・表の貼り付け。セルはタブ区切り）。「フリガナ」の列は読み、「氏名」の列は氏名
@@ -200,24 +235,28 @@ export function readingSpans(merged: MergedSpan[], text: string): Span[] {
       if (isReading(norm.slice(r.start, r.end))) push(r.start, r.end, READING_DETAILS.paren);
     }
 
-    // すぐ上の行
+    // すぐ上の行（ルビ）。見出しのない欄では、すぐ下の行に読みを書くこともある（「山田 太郎\nやまだ たろう」）
     const li = lineOf(m.start);
-    if (li <= 0) continue;
+    if (li < 0) continue;
     const nameLine = ls[li]!;
-    const above = ls[li - 1]!;
-    const r = trimRange(norm, above.start, above.end);
-    const reading = norm.slice(r.start, r.end);
-    if (!isReading(reading) || SENTENCE_END.test(reading) || LABEL_START_RE.test(reading)) continue;
     const nameParts = name.trim().split(/ +/u);
-    const readingParts = reading.split(/ +/u);
     const compactName = nameParts.join('');
-    const compactReading = readingParts.join('');
-    if (compactReading.length < compactName.length || compactReading.length > compactName.length * 4 + 2) continue;
-    // 氏名の行が氏名（と「氏名」の見出し・敬称）だけか、姓と名の区切りの数が読みと同じときだけ
+    // 氏名の行が氏名（と「氏名」の見出し・敬称）だけか
     const rest = (norm.slice(nameLine.start, m.start) + norm.slice(m.end, nameLine.end)).replace(/ご?氏名|お?名前|様|さん|殿|[\s:：]/gu, '');
-    const sameShape = nameParts.length >= 2 && nameParts.length === readingParts.length;
-    if (!sameShape && rest) continue;
-    push(r.start, r.end, READING_DETAILS.ruby);
+    for (const [k, detail] of [[li - 1, READING_DETAILS.ruby], [li + 1, READING_DETAILS.below]] as const) {
+      const near = ls[k];
+      if (!near) continue;
+      const r = trimRange(norm, near.start, near.end);
+      const reading = norm.slice(r.start, r.end);
+      if (!isReading(reading) || SENTENCE_END.test(reading) || LABEL_START_RE.test(reading)) continue;
+      const readingParts = reading.split(/ +/u);
+      const compactReading = readingParts.join('');
+      if (compactReading.length < compactName.length || compactReading.length > compactName.length * 4 + 2) continue;
+      // 姓と名の区切りの数が読みと同じか、（上の行のときは）氏名の行が氏名だけのときだけ
+      const sameShape = nameParts.length >= 2 && nameParts.length === readingParts.length;
+      if (k > li ? !sameShape || rest : !sameShape && rest) continue;
+      push(r.start, r.end, detail);
+    }
   }
 
   // 住所のすぐ上の行の読み仮名（間に郵便番号だけの行があってもよい）:
