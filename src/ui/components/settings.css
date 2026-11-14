@@ -1,0 +1,92 @@
+/*
+ * 設定画面だけの見た目。色は styles.css のトークン（墨と藍）だけを使い、明暗どちらでも同じ規則で見えるようにする。
+ * 1枚に「加工の設定 → 利用条件 → 注意点」を並べ、区切り線と見出しで段落を分ける。
+ */
+
+.settings-dialog .settings-group-title { font-size: 14px; font-weight: 650; margin: 0 0 14px; color: var(--text); }
+.settings-dialog .settings-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.settings-dialog .settings-group-head .settings-group-title { margin: 0; }
+.settings-dialog .settings-group-head + .hint { margin-top: 4px; }
+.settings-dialog .settings-group,
+.settings-dialog .settings-usage { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); scroll-margin-top: 8px; }
+.settings-dialog .field-label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+.settings-dialog .field select { width: 100%; }
+.settings-dialog .field .hint { margin-top: 6px; }
+
+/* 「状態」のチップ。回答済みは許可ではないので、緑ではなく藍の線で控えめに出す */
+.settings-dialog .chip-info { color: var(--accent); background: var(--surface); border-color: var(--accent); }
+
+/* 隠す強さ: 1つずつ縦に並べた選択カード。選んだものは藍の枠と塗りで示す */
+.stage-cards { display: grid; gap: 8px; }
+.settings-dialog .stage-card {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  justify-content: stretch;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+.settings-dialog .stage-card:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-subtle); }
+.settings-dialog .stage-card.on,
+.settings-dialog .stage-card.on:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.stage-card-mark { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--border-strong); background: var(--surface); }
+.stage-card.on .stage-card-mark { border: 5px solid var(--accent); }
+.stage-card-letter { font-size: 20px; font-weight: 700; line-height: 1; color: var(--muted); min-width: 1ch; }
+.stage-card.on .stage-card-letter { color: var(--accent); }
+.stage-card-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.stage-card-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.stage-card-name .chip { font-size: 10px; padding: 0 6px; line-height: 1.7; }
+.stage-card-note { font-size: 12px; color: var(--muted); font-weight: 400; }
+.stage-card.on .stage-card-note { color: var(--text); }
+
+/* 加工の例。選んでいる強さの列を藍で塗る */
+.stage-examples { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 12px 0 0; font-size: 12px; }
+.stage-examples caption { text-align: left; font-size: 11px; color: var(--muted); padding-bottom: 4px; }
+.stage-examples th, .stage-examples td { padding: 5px 8px; text-align: left; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; vertical-align: top; }
+.stage-examples thead th { font-size: 11px; font-weight: 600; color: var(--muted); }
+.stage-examples tbody th { font-weight: 500; color: var(--text); }
+.stage-examples .on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.stage-examples thead .on { color: var(--accent); }
+.stage-examples .ex-same { color: var(--muted); font-weight: 400; }
+
+.settings-dialog .settings-rec { margin: 12px 0 0; padding: 10px 12px; }
+.settings-dialog .settings-rec p { margin: 0; }
+
+.settings-dialog .checks { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+
+/* 「詳しく」: 本文から外した説明。押すまでは1行だけ */
+.settings-dialog details.more { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.settings-dialog details.more > summary { font-size: 12px; color: var(--accent); width: fit-content; }
+.settings-dialog details.more ul { margin: 6px 0 0; }
+.settings-dialog details.more p { margin: 6px 0 0; }
+
+/* 詳しい設定・データの扱い: 閉じた見出しだけを並べる */
+.settings-dialog .settings-advanced { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+.settings-dialog .settings-advanced > summary { font-size: 13px; font-weight: 600; color: var(--text); }
+.settings-dialog .settings-advanced > summary:hover { color: var(--accent); }
+.settings-dialog .settings-advanced[open] > summary { margin-bottom: 4px; }
+.settings-dialog .settings-advanced h4 { margin: 16px 0 4px; font-size: 12px; color: var(--text); }
+.settings-dialog .settings-advanced h4 + .hint { margin-top: 0; }
+.settings-dialog .settings-advanced .check-line { align-items: flex-start; color: var(--text); }
+.settings-dialog .settings-advanced .check-line input { margin-top: 4px; }
+.settings-dialog .settings-advanced .field { margin: 8px 0 0; }
+.settings-dialog .settings-advanced ul { margin: 10px 0 0; }
+.settings-dialog .engine-status { display: block; font-size: 11px; color: var(--muted); }
+
+.settings-dialog .settings-bottom .primary { min-width: 128px; min-height: 40px; }
+
+/* 利用条件: 番号つきの問いと、3つ並びの答え。選んだ答えは藍で塗る */
+.settings-dialog .conditions-panel .question { border: 0; padding: 0; margin: 18px 0 0; }
+.settings-dialog .conditions-panel .question legend { display: flex; gap: 8px; padding: 0; margin-bottom: 8px; font-size: 13px; line-height: 1.6; }
+.settings-dialog .q-num { flex: 0 0 auto; display: inline-grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; font-size: 11px; font-weight: 600; color: var(--muted); background: var(--surface-subtle); border: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.settings-dialog .conditions-panel .segmented.small { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 0; background: none; border: 0; }
+.settings-dialog .conditions-panel .segmented.small button { justify-content: center; min-height: 34px; padding: 4px 6px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: none; }
+.settings-dialog .conditions-panel .segmented.small button:hover { background: var(--surface-subtle); }
+.settings-dialog .conditions-panel .segmented.small button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; box-shadow: inset 0 0 0 1px var(--accent); }
+.settings-dialog .conditions-panel .callout { margin-top: 18px; }

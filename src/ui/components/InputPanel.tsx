@@ -31,10 +31,10 @@ export function InputPanel() {
       const tab = await getActiveTab();
       if (!tab) throw new Error();
       const selected = await importSelection(tab.id);
-      if (!selected.trim()) setMessage('ページで文章を選択してから押してください。');
+      if (!selected.trim()) setMessage('ページで文章を選んでから押してください。');
       else setText(selected);
     } catch {
-      setMessage('このページの選択テキストは読めませんでした。文章をコピーして貼り付けてください。');
+      setMessage('このページの選択文は読めません。コピーして貼り付けてください。');
     }
   }
 
@@ -57,7 +57,8 @@ export function InputPanel() {
       if (!imported.trim()) setMessage('ファイルに文字の入ったセルがありませんでした。');
       else {
         importFile(source);
-        setFileNotes([`「${file.name}」を取り込みました。`, ...notes]);
+        // ファイル名は上のカードに出るので、注意書きだけを並べる
+        setFileNotes(notes);
       }
     } catch (e) {
       setMessage(e instanceof SpreadsheetError ? e.message : 'ファイルを読めませんでした。');
@@ -83,7 +84,7 @@ export function InputPanel() {
         importFile(src);
         setFileNotes([
           `「${file.name}」（${src.pageCount} ページ）の文字${src.images.some((i) => i.ocr) ? 'と画像の中の文字' : ''}を取り込みました。`,
-          ...(src.blockers.length ? ['PDF の形では保存できません（理由は出力先の欄に表示します）。コピー・挿入はできます。'] : []),
+          ...(src.blockers.length ? ['PDF の形では保存できません。理由は手順 3 に出ます。'] : []),
           ...src.notes,
         ]);
       } finally {
@@ -150,18 +151,15 @@ export function InputPanel() {
 
   return (
     <section className="panel input-panel" aria-labelledby="input-title">
-      <div className="section-heading">
-        <div>
-          <h2 id="input-title">{fileSource ? '元のファイル' : '元の文章'}</h2>
-        </div>
-        <div className="heading-actions">
-          <span className="text-count">{fileSource ? fileSummary(fileSource) : `${text.length.toLocaleString()} 文字`}</span>
-          {text && (
-            <button type="button" className="ghost clear-button" onClick={() => setConfirmOpen(true)}>
-              削除
-            </button>
-          )}
-        </div>
+      <div className="step-heading">
+        <span className="step-num" aria-hidden="true">1</span>
+        <h2 id="input-title">文章を入れる</h2>
+        <span className="step-meta">{fileSource ? fileSummary(fileSource) : text ? `${text.length.toLocaleString()} 文字` : ''}</span>
+        {text && (
+          <button type="button" className="ghost clear-button" onClick={() => setConfirmOpen(true)}>
+            削除
+          </button>
+        )}
       </div>
       {fileSource ? (
         <div
@@ -173,13 +171,7 @@ export function InputPanel() {
           <Icon name="file" />
           <div>
             <p className="file-name">{fileSource.fileName}</p>
-            <p className="hint">
-              {fileSource.kind === 'pdf'
-                ? 'ページの文字と画像の中の文字を検査しています。PDF の形のまま保存できます。'
-                : fileSource.kind === 'image'
-                  ? '画像の中の文字と顔を端末内で探しています。隠す語と顔を塗りつぶした画像として保存できます。'
-                  : 'セルの内容を検査しています。結果は下の表で確認できます。'}
-            </p>
+            <p className="hint">{fileSource.kind === 'pdf' ? 'ページと画像の中の文字を検査' : fileSource.kind === 'image' ? '画像の中の文字と顔を検査' : 'セルの内容を検査'}</p>
           </div>
         </div>
       ) : (
@@ -194,17 +186,17 @@ export function InputPanel() {
           onChange={(e) => setText(e.target.value)}
           onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
           onDrop={onDrop}
-          placeholder="文章を貼り付け、またはExcel・CSV・PDF・画像をドロップ"
+          placeholder="文章を貼り付け（Excel・CSV・PDF・画像はドロップ）"
           rows={3}
           aria-label="解析する文章"
         />
       )}
-      <div className="row">
-        <button type="button" onClick={onImport}>
+      <div className="row input-actions">
+        <button type="button" className="ghost" onClick={onImport}>
           <Icon name="import" />
           選択文を取り込む
         </button>
-        <button type="button" onClick={() => fileInput.current?.click()} disabled={reading}>
+        <button type="button" className="ghost" onClick={() => fileInput.current?.click()} disabled={reading}>
           <Icon name="file" />
           {reading ? '読込中…' : fileSource ? '別のファイルを読込' : 'ファイルを読込'}
         </button>
@@ -220,7 +212,7 @@ export function InputPanel() {
       <ConfirmDialog
         open={confirmOpen}
         title="文章を削除しますか？"
-        body="入力した文章、加工結果、復元した回答をこの画面から消します。元に戻せません。"
+        body="文章・加工結果・復元した回答を消します。元に戻せません。"
         confirmLabel="削除する"
         onConfirm={onReset}
         onClose={() => setConfirmOpen(false)}

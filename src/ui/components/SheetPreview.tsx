@@ -117,7 +117,7 @@ export function SheetPreview({
       </div>
       {sheet.truncated && (
         <p className="hint">
-          表示は先頭 {MAX_GRID_ROWS} 行・{MAX_GRID_COLS} 列までです。検査と保存はすべてのセルに対して行います。
+          先頭 {MAX_GRID_ROWS} 行・{MAX_GRID_COLS} 列だけ表示（検査と保存は全セル）
         </p>
       )}
     </div>

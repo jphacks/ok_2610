@@ -55,7 +55,7 @@ export function ImagePreview({ source }: { source: ImageSource }) {
   return (
     <details className="pdf-preview" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary>画像の仕上がりを確認</summary>
-      <p className="hint">隠しきれていない所は、画像の上をドラッグして四角形で囲むと、その部分を塗りつぶします。</p>
+      <p className="hint">隠れていない所や顔は、ドラッグで囲むと塗りつぶします。</p>
       {busy && <p className="hint" role="status">仕上がりを作っています…</p>}
       {message && <p className="hint warn">{message}</p>}
       {rects.length > 0 && (

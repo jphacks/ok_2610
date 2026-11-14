@@ -90,15 +90,43 @@ li + li { margin-top: 4px; }
 .icon { flex: 0 0 auto; vertical-align: middle; }
 .app { max-width: 760px; padding: 0 20px; margin: 0 auto; }
 
-/* 拡張名は Chrome が上に出すので、検査の状態といまの設定だけを置く。設定はタグで見せ、変更は設定画面で行う。 */
-.header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 0; margin-bottom: 4px; background: var(--bg); }
-.tags { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; margin: 0; min-width: 0; }
-.tags li { margin: 0; }
-.tag { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; line-height: 1.6; padding: 2px 10px; border-radius: 999px; background: var(--surface); color: var(--muted); white-space: nowrap; }
-.tag-ok, .tag-danger, .tag-muted { font-weight: 600; }
-.tag-ok { color: var(--ok); background: var(--ok-soft); }
-.tag-danger { color: var(--danger); background: var(--danger-soft); }
-.tag-ok::before, .tag-danger::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+/* 上端は状態表示の帯。左の状態は押せない文字（枠も背景も付けない）、右の設定ボタンだけが押せる。 */
+.header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0; margin-bottom: 2px; background: var(--bg); }
+.header-status { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; min-width: 0; }
+.status { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 650; white-space: nowrap; color: var(--muted); }
+.status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.status-idle { font-weight: 500; }
+.status-idle::before { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+.status-busy::before { animation: status-pulse 1.2s ease-in-out infinite; }
+.status-ok { color: var(--ok); }
+.status-danger { color: var(--danger); }
+@keyframes status-pulse { 50% { opacity: .3; } }
+/* 組織へ記録を送っていることは、作業中もいつでも見えるようにする（押せない表示） */
+.status-report { font-size: 11px; color: var(--accent); white-space: nowrap; }
+.status-report::before { content: '●'; font-size: 8px; margin-right: 4px; vertical-align: 1px; }
+button.settings-button { gap: 6px; min-height: 32px; padding: 4px 8px 4px 10px; font-size: 11px; color: var(--muted); background: var(--surface); border-color: var(--border); border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
+button.settings-button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); background: var(--surface); }
+.settings-button .icon { width: 16px; height: 16px; color: var(--text); }
+
+/* 手順の見出し。①〜④の番号で、上から順に進むことを示す。右端（step-meta）は件数などの添え書き */
+.step-heading { display: flex; align-items: center; gap: 8px; min-height: 28px; margin: 0 0 10px; }
+.step-heading h2 { font-size: 15px; line-height: 1.4; margin: 0; min-width: 0; }
+.step-num { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--accent-text); font-size: 12px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.step-meta { margin-left: auto; flex-shrink: 0; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.step-meta:empty { display: none; }
+.step-heading > button { flex-shrink: 0; }
+.step-meta:empty + button, .step-heading > h2 + button { margin-left: auto; }
+
+/* 長い説明は「詳しく」の中にしまう。どの手順でも同じ見た目で使う */
+details.more { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+details.more > summary { display: inline-flex; align-items: center; gap: 2px; list-style: none; font-size: 11px; color: var(--muted); padding: 2px 0; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::after { content: '▸'; font-size: 10px; transition: transform .15s; }
+details.more[open] > summary::after { transform: rotate(90deg); }
+details.more > summary:hover { color: var(--accent); }
+details.more > :not(summary) { margin: 6px 0 0; }
+details.more ul { padding-left: 18px; }
+
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
   display: inline-flex;
@@ -120,8 +148,8 @@ li + li { margin-top: 4px; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
-  margin: 0 0 12px;
+  padding: 14px 16px 16px;
+  margin: 0 0 10px;
   min-width: 0;
 }
 .section-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
@@ -133,7 +161,7 @@ li + li { margin-top: 4px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
 .row.between { justify-content: space-between; margin-top: 0; }
 .row h3 { margin-bottom: 0; }
-.hint { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 8px 0 0; }
+.hint { color: var(--muted); font-size: 11px; line-height: 1.6; margin: 6px 0 0; }
 .hint.warn, .warn > p { color: var(--warn); }
 .file-notes { padding-left: 18px; }
 .pre-line { white-space: pre-line; }
@@ -168,10 +196,12 @@ button {
 }
 button:hover:not(:disabled) { background: var(--surface-subtle); border-color: var(--muted); }
 button:disabled { opacity: .45; cursor: not-allowed; }
-button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+/* 主な操作は各手順に1つだけ。塗りと大きさで、ほかのボタンと見間違えないようにする */
+button.primary { min-height: 40px; padding: 8px 16px; font-size: 13px; background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 650; box-shadow: 0 1px 2px rgb(0 0 0 / 12%); }
 button.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(.94); border-color: var(--accent); }
-button.ghost { background: transparent; border-color: var(--border); color: var(--muted); }
-button.clear-button { margin-left: auto; border-color: transparent; }
+button.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+button.ghost:hover:not(:disabled) { background: var(--surface-subtle); border-color: var(--border); color: var(--text); }
+button.clear-button { border-color: transparent; }
 button.clear-button:hover:not(:disabled) { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
 button.link { min-height: auto; padding: 0 4px; color: var(--accent); background: transparent; border: none; text-decoration: underline; text-underline-offset: 3px; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
@@ -304,13 +334,13 @@ details[open].sub > summary { margin-bottom: 16px; }
 button.icon-button { padding: 8px; width: 36px; height: 36px; min-height: 36px; flex-shrink: 0; border-color: transparent; }
 .input-panel .row { margin-bottom: 0; }
 .input-panel textarea { background: var(--surface); border-color: var(--border); }
-.results-panel { padding-bottom: 0; }
 .preview-card { border: 0; border-radius: 0; margin: 0; padding: 0; }
 .preview-card .row.between { margin-bottom: 10px; }
 .history-actions { display: flex; gap: 2px; }
 .history-actions .icon { width: 16px; height: 16px; }
 .inspection-details { color: var(--muted); font-size: 11px; margin: 12px 0; }
-.output-panel { position: sticky; bottom: 0; z-index: 2; margin: 16px -16px 0; padding: 12px 16px 14px; background: var(--surface); border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); box-shadow: 0 -8px 20px rgb(0 0 0 / 2%); }
+/* 手順3（出力）は手順2の下に独立したカードとして置く */
+.output-panel { margin: 0 0 10px; padding: 14px 16px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); min-width: 0; }
 .destination-details { font-size: 12px; }
 .destination-details > summary { display: flex; align-items: center; gap: 8px; min-height: 30px; list-style: none; }
 .destination-details > summary::-webkit-details-marker { display: none; }
@@ -320,10 +350,12 @@ button.icon-button { padding: 8px; width: 36px; height: 36px; min-height: 36px; 
 .destination-options legend { position: absolute; clip-path: inset(50%); height: 1px; width: 1px; overflow: hidden; }
 .output-panel .hint { font-size: 11px; }
 .output-panel .callout { margin: 8px 0; padding: 10px 12px; }
-.utility-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin: 4px 0 12px; }
-button.utility-link { border: none; background: transparent; padding: 4px 0; color: var(--muted); font-size: 11px; }
-.utility-link .icon { width: 14px; height: 14px; }
-.utility-status { padding: 1px 6px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); font-size: 10px; }
+/* 利用条件と組織ポリシーは手順の流れから外し、画面の下に小さく置く */
+.app-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 10px 0 20px; margin-top: 4px; border-top: 1px solid var(--border); }
+button.footer-link { gap: 6px; min-height: 28px; border: none; background: transparent; padding: 2px 0; color: var(--muted); font-size: 11px; }
+button.footer-link:hover:not(:disabled) { background: transparent; color: var(--accent); }
+.footer-link .icon { width: 12px; height: 12px; }
+.footer-status { padding: 0 6px; border-radius: 4px; background: var(--surface-subtle); font-size: 10px; font-weight: 600; }
 .policy-status { color: var(--muted); font-size: 10px; }
 .attention { color: var(--warn); }
 .restore-panel { border: 0; background: transparent; padding: 12px 0; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; }
@@ -344,20 +376,19 @@ button.utility-link { border: none; background: transparent; padding: 4px 0; col
 .settings-bottom .hint { margin: 0; font-size: 10px; }
 @media (max-width: 480px) {
   .app { padding: 0 12px; }
-  .header { padding: 12px 0; }
-  .panel { padding: 14px; border-radius: 12px; }
-  .results-panel { padding-bottom: 0; }
-  .section-heading { margin-bottom: 10px; }
+  .header { padding: 8px 0; }
+  .panel { padding: 12px 14px 14px; border-radius: 12px; }
+    .section-heading { margin-bottom: 10px; }
   h2 { font-size: 14px; }
   .input { min-height: 96px; }
-  .input-panel .row button { padding: 6px; font-size: 11px; }
+  .input-panel .row button { padding: 4px 6px; font-size: 11px; }
   .input-panel .row .icon { width: 14px; }
   .doc { padding: 12px; font-size: 13px; }
   .card.detail { padding: 12px; }
   .risk-card { padding: 10px 12px; }
   .risk-plan { gap: 6px; }
   .risk-plan p { font-size: 11px; }
-  .output-panel { margin-left: -14px; margin-right: -14px; padding-left: 14px; padding-right: 14px; }
+  .output-panel { padding: 12px 14px 14px; }
   .settings-content, .settings-header, .settings-bottom { padding: 14px; }
   .settings-tabs { padding: 0 14px; }
   .settings-content .panel { padding: 0; }
@@ -387,8 +418,6 @@ button.danger:hover:not(:disabled) { background: var(--danger); border-color: va
 .pdf-drag { position: absolute; border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 20%, transparent); pointer-events: none; }
 .data-notes p { margin: 10px 0 0; }
 .usage-json { margin: 8px 0 0; padding: 10px 12px; max-height: 220px; overflow: auto; border-radius: 8px; background: var(--surface-subtle); border: 1px solid var(--border); font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
-/* 組織へ記録を送っていることは、作業中もいつでも見えるようにする */
-.tag-report { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 
 /* 処理の選択肢。ボタンそのものに仕上がりを、本文の印と同じ見た目で書く（Issue #29） */
 .options { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 6px; }
@@ -407,13 +436,18 @@ button.danger:hover:not(:disabled) { background: var(--danger); border-color: va
 .applied-note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 8px 0 0; font-size: 12px; }
 
 /* 入力欄。解析後に離れたら2行ぶんに畳み、続きがあることを下端のぼかしで示す */
-.heading-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.heading-actions .clear-button { min-height: 28px; padding: 2px 8px; margin-left: 0; font-size: 11px; }
+.step-heading .clear-button { min-height: 26px; padding: 2px 8px; font-size: 11px; }
+.input-actions { gap: 4px; margin: 8px 0 0; }
+.input-actions button { min-height: 30px; padding: 4px 8px; font-size: 11px; }
+.input-actions .icon { width: 15px; height: 15px; }
 .input.collapsed { min-height: 0; height: 76px; overflow: hidden; resize: none; cursor: text; -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent); mask-image: linear-gradient(to bottom, #000 55%, transparent); }
 
-/* 文章がまだないときの案内 */
-.empty-guide { margin: 0 0 12px; padding: 16px 18px; border: 1px dashed var(--border-strong); border-radius: var(--radius); }
+/* 文章がまだないときの案内。手順の見出しと同じ番号を使い、流れを先に見せる */
+.empty-guide { margin: 0 0 10px; padding: 14px 16px 16px; border: 1px dashed var(--border-strong); border-radius: var(--radius); }
 .empty-guide h2 { font-size: 14px; margin-bottom: 10px; }
-.empty-guide ol { margin: 0 0 14px; padding-left: 20px; font-size: 13px; }
-.empty-guide li + li { margin-top: 6px; }
-.empty-guide .hint { margin-top: 10px; }
+.guide-steps { list-style: none; margin: 0 0 14px; padding: 0; font-size: 13px; }
+.guide-steps li { display: flex; align-items: center; gap: 8px; margin: 0; }
+.guide-steps li + li { margin-top: 6px; }
+.guide-steps .step-num { width: 20px; height: 20px; font-size: 11px; background: var(--accent-soft); color: var(--accent); }
+.empty-guide button.primary { width: 100%; }
+.empty-guide .hint { margin-top: 8px; text-align: center; }

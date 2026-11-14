@@ -1,0 +1,87 @@
+/*
+ * 手順2「加工を確認」〜手順4「回答を元に戻す」の見た目（Preview・DetailPanel・RiskPanel・OutputPanel・RestorePanel）。
+ * 色は styles.css のトークンだけを使い、明暗どちらの画面でも同じ意味に見えるようにする。
+ * styles.css の古い規則を上書きするときは、より具体的なセレクタで書く。
+ */
+
+/* ---- 手順3 AI に渡す ----
+ * 主な操作がいつでも押せるよう、画面の下に貼り付ける（本文を読み進める間も見える）。
+ * 中身は見出し・1行の説明・ボタンだけに絞り、仕上がりの確認は手順2に置く。
+ * 貼り付くのは、親（メインの列）の範囲の中だけ。
+ */
+.panel.output-panel { position: sticky; bottom: 0; z-index: 3; margin: 0 0 12px; padding: 10px 14px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); box-shadow: 0 -6px 18px rgb(0 0 0 / 10%); }
+.panel.output-panel > .hint { margin: 6px 0 0; font-size: 12px; }
+.panel.output-panel .more .hint { margin-top: 4px; }
+.panel.output-panel .output-top { display: flex; align-items: center; gap: 12px; }
+.panel.output-panel .output-top .step-heading { flex: none; margin: 0; }
+.panel.output-panel .output-top .output-actions { flex: 1; min-width: 0; margin: 0; }
+.panel.output-panel .output-top .output-main { width: 100%; }
+.panel.output-panel .output-main { min-height: 46px; font-size: 14px; }
+.panel.output-panel .conditions-callout { margin: 10px 0 0; padding: 10px 12px; }
+.panel.output-panel .conditions-callout p { margin: 0; font-size: 12px; }
+.panel.output-panel .conditions-callout .row { margin: 8px 0 0; }
+.panel.output-panel [role='status'] { margin-top: 8px; }
+
+/* ---- 手順2 加工を確認: プレビュー ---- */
+.preview-card .legend-hint { font-size: 11px; }
+
+/* 見落としを手で隠す: 普段は1行に畳んだ控えめな道具。文章を選ぶと開く */
+.preview-card details.manual-mask { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.preview-card details.manual-mask > summary { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; font-size: 12px; color: var(--muted); list-style: none; }
+.preview-card details.manual-mask > summary::-webkit-details-marker { display: none; }
+.preview-card details.manual-mask > summary::before { content: '+'; display: inline-grid; place-items: center; width: 16px; height: 16px; border: 1px solid var(--border-strong); border-radius: 4px; font-size: 12px; line-height: 1; }
+.preview-card details.manual-mask[open] > summary::before { content: '−'; }
+.preview-card details.manual-mask > summary:hover { color: var(--accent); }
+.preview-card details.manual-mask .row { margin: 8px 0 0; }
+.preview-card details.manual-mask .manual-actions { margin-bottom: 0; }
+.preview-card details.manual-mask .hint { margin: 6px 0 0; font-size: 11px; }
+
+/* 手順2の最後: 保存する PDF・画像の仕上がり（顔・塗りつぶし） */
+.preview-card .faces-panel { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.preview-card .faces-panel > legend { font-size: 12px; }
+.preview-card .faces-panel .check-line { margin: 6px 0; }
+.preview-card .pdf-preview { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12px; }
+.preview-card .pdf-preview > summary { min-height: 28px; color: var(--muted); }
+.preview-card .pdf-preview > summary:hover { color: var(--accent); }
+.preview-card .faces-panel + .pdf-preview { border-top: 0; padding-top: 0; }
+
+/* ---- 手順2: 押した語の直し方 ---- */
+.card.detail { padding: 12px 14px; }
+.detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.detail-head .what { margin: 0; padding-top: 7px; font-size: 13px; font-weight: 600; line-height: 1.6; }
+.detail-head .icon-button { margin: -2px -6px 0 0; color: var(--muted); }
+.card.detail .options { margin: 10px 0 4px; }
+.card.detail .option:not(.on):hover:not(:disabled) { border-color: var(--accent); background: var(--surface); }
+.card.detail .notes { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
+.card.detail .why-lead { margin: 4px 0 8px; font-size: 12px; color: var(--muted); }
+.card.detail .detail-why { margin-top: 10px; font-size: 12px; }
+.card.detail .detail-why .why { margin: 6px 0; font-size: 12px; }
+.card.detail .detail-why .if-kept { margin: 6px 0 0; font-size: 12px; }
+.card.detail .detail-more { margin-top: 6px; }
+
+/* ---- 手順2: 組合せの手がかり ---- */
+.risk-card .risk-plan { margin-top: 6px; }
+.risk-card .risk-plan p { font-size: 12px; }
+.risk-card button.risk-action { min-height: 34px; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var(--accent); background: var(--surface); border-color: var(--accent); }
+.risk-card button.risk-action:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
+.risk-card .risk-details { margin-top: 8px; }
+
+/* ---- 手順4 回答を元に戻す（任意・畳んでおく） ---- */
+.panel.restore-panel { padding: 16px; margin: 0 0 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: none; }
+.panel.restore-panel:not(.open) .step-heading { margin-bottom: 0; }
+.panel.restore-panel h2 button.disclosure { display: inline-flex; align-items: center; gap: 6px; min-height: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
+.panel.restore-panel h2 button.disclosure:hover:not(:disabled) { color: var(--accent); background: none; }
+.panel.restore-panel .disclosure-icon { width: 16px; height: 16px; color: var(--muted); transition: transform .15s; }
+.panel.restore-panel.open .disclosure-icon { transform: rotate(90deg); }
+.panel.restore-panel .restore-flow { margin-top: 12px; }
+.panel.restore-panel .restore-flow + .restore-flow { padding-top: 14px; border-top: 1px solid var(--border); }
+.panel.restore-panel .restore-flow h3 { margin: 0 0 2px; font-size: 13px; }
+.panel.restore-panel .restore-flow > .hint:first-of-type { margin-top: 2px; }
+.panel.restore-panel textarea { margin: 10px 0 8px; }
+.panel.restore-panel .restore-flow > button { margin-top: 8px; }
+.panel.restore-panel .restore-flow > button + button { margin-left: 8px; }
+.panel.restore-panel .output-preview { margin-top: 10px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .panel.restore-panel .disclosure-icon { transition: none; }
+}

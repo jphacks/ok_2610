@@ -63,7 +63,7 @@ test('AIの回答の仮ラベルを元に戻せる', async ({ context, extension
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await page.getByLabel('解析する文章').fill(demo);
   await expect(page.getByLabel('加工後の文章')).toContainText('人物A', { timeout: 90_000 });
-  await page.getByText('AIの回答を復元').click();
+  await page.getByRole('heading', { name: '回答を元に戻す' }).click();
   // 仮ラベルは出現順に振られるので、実際の加工文から佐藤花子のラベルを読む
   const label = await page.getByLabel('加工後の文章').getByRole('button', { name: /^人物[A-Z]+$/ }).first().textContent();
   await page.getByRole('textbox', { name: 'AIの回答' }).fill(`${label}さんは[注文番号1]の配達日を気にしています。`);

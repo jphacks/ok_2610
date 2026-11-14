@@ -31,19 +31,20 @@ export function App() {
       <main>
         <InputPanel key={`input:${sessionId}`} />
         {hasText ? <ReviewPanel key={`review:${sessionId}`} onSettings={openSettings} /> : !source && <EmptyGuide />}
-        <div className="utility-row">
-          <button type="button" className="utility-link" onClick={() => openSettings('conditions')}><Icon name="check" />利用条件<span className={`utility-status ${conditions.status === 'unknown' || conditions.status === 'restricted' ? 'attention' : ''}`}>{conditions.status === 'unanswered' ? '未回答' : conditions.status === 'selfDeclaredOk' ? '回答済み' : '要確認'}</span><Icon name="chevron" /></button>
-          <span
-            className={`policy-status ${result?.policy.status === 'error' ? 'attention' : ''}`}
-            title={result?.policy.status === 'error' ? result.policy.reason : result?.policy.status === 'active' ? `配布元：${POLICY_SOURCE_LABEL[result.policy.source]}` : undefined}
-          >
-            {result?.policy.status === 'active'
-              ? `組織ポリシー ${result.policy.version}（${POLICY_SOURCE_LABEL[result.policy.source]}）`
-              : result?.policy.status === 'error' ? POLICY_ERROR_LABEL[result.policy.state] : '組織ポリシーなし'}
-          </span>
-        </div>
         <RestorePanel key={`${sessionId}:${result?.contentId ?? ''}`} />
       </main>
+      {/* 利用条件と組織ポリシーは手順の間に置かず、画面の下に静かに出す */}
+      <footer className="app-footer">
+        <button type="button" className="footer-link" onClick={() => openSettings('conditions')}>利用条件<span className={`footer-status ${conditions.status === 'unknown' || conditions.status === 'restricted' ? 'attention' : ''}`}>{conditions.status === 'unanswered' ? '未回答' : conditions.status === 'selfDeclaredOk' ? '回答済み' : '要確認'}</span><Icon name="chevron" /></button>
+        <span
+          className={`policy-status ${result?.policy.status === 'error' ? 'attention' : ''}`}
+          title={result?.policy.status === 'error' ? result.policy.reason : result?.policy.status === 'active' ? `配布元：${POLICY_SOURCE_LABEL[result.policy.source]}` : undefined}
+        >
+          {result?.policy.status === 'active'
+            ? `組織ポリシー ${result.policy.version}（${POLICY_SOURCE_LABEL[result.policy.source]}）`
+            : result?.policy.status === 'error' ? POLICY_ERROR_LABEL[result.policy.state] : '組織ポリシーなし'}
+        </span>
+      </footer>
       <SettingsDialog open={settingsOpen} section={settingsSection} onSection={setSettingsSection} onClose={() => setSettingsOpen(false)} />
     </div>
   );
