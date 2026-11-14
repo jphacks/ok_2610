@@ -10,7 +10,7 @@ const NETWORK_GLOBALS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 
 }));
 
 export default tseslint.config(
-  { ignores: ['.output/', '.wxt/', 'node_modules/', 'public/', '.venv-ner/', 'test-results/', 'admin/dist/', 'server/data/'] },
+  { ignores: ['.output/', '.wxt/', 'node_modules/', 'public/', '.venv-ner/', 'test-results/', 'admin/dist/', 'server/data/', '.vercel/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -41,7 +41,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/engines/ner.ts', 'src/infra/assets.ts', 'src/infra/reporting.ts'],
+    files: ['src/engines/ner.ts', 'src/infra/assets.ts', 'src/infra/reporting.ts', 'src/infra/management.ts'],
     rules: { 'no-restricted-globals': 'off' },
   },
   {

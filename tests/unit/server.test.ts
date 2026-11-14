@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import type { UsageEvent } from '../../shared/usage-event';
 import { createApp, createOrganization } from '../../server/src/app';
-import { deleteExpiredEvents, openDb, type Db } from '../../server/src/db';
+import { deleteExpiredEvents, type Db } from '../../server/src/db';
+import { emptyDb } from './db-helpers';
 
 const NOW = new Date('2026-10-18T05:00:00Z');
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop';
@@ -37,8 +38,12 @@ const json = (body: unknown, extra: Record<string, string> = {}) => ({ method: '
 const admin = (path: string, init: RequestInit = {}) => app.request(path, { ...init, headers: { ...(init.headers as Record<string, string>), cookie } });
 const send = (events: unknown[], bearer = token) => app.request('/v1/events', json({ events }, { authorization: `Bearer ${bearer}`, origin: EXT }));
 
+
+/** COUNT(*) は PostgreSQL では大きな整数になるので、数に直して比べる */
+const count = async (sql: string) => Number((await db.one<{ n: unknown }>(sql))!.n);
+
 beforeEach(async () => {
-  db = openDb(':memory:');
+  db = await emptyDb();
   app = createApp({ db, now: () => NOW });
   await createOrganization(db, 'デモ組織', 'admin@example.com', 'correct horse battery staple', NOW);
   const login = await app.request('/admin/session', json({ email: 'admin@example.com', password: 'correct horse battery staple' }));
@@ -60,13 +65,13 @@ describe('記録の受付 /v1/events', () => {
     expect(res.status).toBe(202);
     expect(await res.text()).toBe('');
     expect((await send([e])).status).toBe(202);
-    expect(db.prepare('SELECT COUNT(*) AS n FROM usage_events').get()).toEqual({ n: 1 });
+    expect(await count('SELECT COUNT(*) AS n FROM usage_events')).toBe(1);
   });
 
   test('本文などの未知の項目を含む記録は、まとめて拒否して何も保存しない', async () => {
     const res = await send([event(), { ...event(), text: '佐藤花子さんの件' }]);
     expect(res.status).toBe(400);
-    expect(db.prepare('SELECT COUNT(*) AS n FROM usage_events').get()).toEqual({ n: 0 });
+    expect(await count('SELECT COUNT(*) AS n FROM usage_events')).toBe(0);
   });
 
   test('失効したトークンは使えない', async () => {
@@ -151,7 +156,7 @@ describe('管理 API', () => {
 
 test('保存期間（13か月）を過ぎた記録を消す', async () => {
   await send([event({ occurredHour: '2025-09-01T00:00Z' }), event()]);
-  expect(deleteExpiredEvents(db, NOW)).toBe(1);
-  expect(db.prepare('SELECT COUNT(*) AS n FROM usage_events').get()).toEqual({ n: 1 });
-  expect(db.prepare('SELECT COUNT(*) AS n FROM usage_event_categories').get()).toEqual({ n: 3 });
+  expect(await deleteExpiredEvents(db, NOW)).toBe(1);
+  expect(await count('SELECT COUNT(*) AS n FROM usage_events')).toBe(1);
+  expect(await count('SELECT COUNT(*) AS n FROM usage_event_categories')).toBe(3);
 });

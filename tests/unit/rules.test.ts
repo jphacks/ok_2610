@@ -16,6 +16,10 @@ describe('直接識別子（FR-01）', () => {
     expect(found(t, 'postalCode')).toEqual(['150-0001']);
     expect(found(t, 'url')).toEqual(['https://example.com/a']);
   });
+  test('「〒」が読めない PDF: 住所の行のすぐ上の7桁の番号を郵便番号にする', () => {
+    expect(found('0600001\n北海道札幌市中央区北一条西2-1', 'postalCode')).toEqual(['0600001']);
+    expect(found('注文番号\n0600001\n発送済み', 'postalCode')).toEqual([]);
+  });
   test('全角の数字でも検出し、原文の位置で返す', () => {
     const t = '電話は０９０－１２３４－５６７８です';
     expect(found(t, 'phone')).toEqual(['０９０－１２３４－５６７８']);
@@ -41,9 +45,49 @@ describe('人名', () => {
   });
 });
 
+describe('PDF・画像から取り出した履歴書（見出しだけの行の次の行に値がある）', () => {
+  test('「氏名」の次の行の氏名（ローマ字も）。ほかの見出しは氏名にしない', () => {
+    expect(found('氏名\n佐伯　結衣\n生年月日', 'personName')).toEqual(['佐伯　結衣']);
+    expect(found('氏名\nHoshino Yuma\n生年月日', 'personName')).toEqual(['Hoshino Yuma']);
+    expect(found('氏名\n生年月日\n2000/05/03', 'personName')).toEqual([]);
+  });
+  test('「現住所」の次の行の住所を、建物名と部屋番号まで', () => {
+    const t = '現住所\n〒202-0894　北海道青凪市旭が丘7丁目3番4号　メゾン青葉 309号室\n電話番号';
+    expect(found(t, 'address')).toContain('北海道青凪市旭が丘7丁目3番4号　メゾン青葉 309号室');
+    expect(found(t, 'postalCode')).toEqual(['202-0894']);
+    expect(found('現住所\n同上', 'address')).toEqual([]);
+  });
+  test('見出しがなくても、建物名と部屋番号の間に空白がある住所', () => {
+    expect(found('東京都霞丘市桜川5丁目3番18号 サンテラス桜川 501号室', 'address')).toContain('東京都霞丘市桜川5丁目3番18号 サンテラス桜川 501号室');
+  });
+  test('狭い欄で折り返された住所の続きの行', () => {
+    const longest = (t: string) => found(t, 'address').sort((a, b) => b.length - a.length)[0];
+    expect(longest('現住所\n〒525-6642 北海道朝凪野市新町6丁\n目24番13号 リバーサイド朝凪 506\n号室\n電話番号')).toBe('北海道朝凪野市新町6丁\n目24番13号 リバーサイド朝凪 506\n号室');
+    expect(longest('〒595-0514 神奈川県月見原市青葉\n台7丁目11番17号 メゾン青葉 1103\n号室')).toBe('神奈川県月見原市青葉\n台7丁目11番17号 メゾン青葉 1103\n号室');
+    expect(longest('京都府青凪市新町8丁目\n23番1号 ガーデン霞丘 901号室')).toBe('京都府青凪市新町8丁目\n23番1号 ガーデン霞丘 901号室');
+    expect(longest('神奈川県風見野市花見\n台5丁目2番21号 リバーサイド朝凪\n907号室')).toBe('神奈川県風見野市花見\n台5丁目2番21号 リバーサイド朝凪\n907号室');
+    // 住所の後の別の欄の行は続きにしない
+    expect(longest('東京都港区芝公園4丁目2番8号\n電話番号\n0312345678')).toBe('東京都港区芝公園4丁目2番8号');
+  });
+  test('最寄り駅（欄の値・「〇〇駅から徒歩」）と、地名の付いた施設', () => {
+    expect(found('最寄り駅・通勤時間\n日向森駅　徒歩4分', 'place')).toContain('日向森駅');
+    expect(found('最寄り駅：JR中央線 三鷹駅', 'place')).toContain('三鷹駅');
+    expect(found('自宅は桜台駅から徒歩5分です。各駅停車で通います', 'place')).toEqual(['桜台駅']);
+    expect(found('月見原地域交流センターにて資料作成を担当', 'orgName')).toEqual(['月見原地域交流センター']);
+    expect(found('近くの図書館と地域交流センターで勉強した', 'orgName')).toEqual([]);
+  });
+  test('地名の「が丘」を含む学校名を途中で切らない', () => {
+    expect(found('2019 3 青凪市立旭が丘高等学校　卒業', 'orgName')).toEqual(['青凪市立旭が丘高等学校']);
+  });
+});
+
 describe('組織・店舗・地域', () => {
   test('長音符を含む社名を途中で切らない（前のツールで漏れた）', () => {
     expect(found('株式会社ABCソリューションズは', 'orgName')).toEqual(['株式会社ABCソリューションズ']);
+  });
+  test('履歴書の職歴: 月の数字を社名にせず、ひらがなと「の」を含む社名を拾う', () => {
+    expect(found('2024 5 株式会社さくらのデザイン（カフェ） 入社', 'orgName')).toEqual(['株式会社さくらのデザイン']);
+    expect(found('株式会社さんの担当です', 'orgName')).toEqual([]);
   });
   test('店舗名は拾い、「当店」「来店」などは拾わない', () => {
     expect(found('渋谷店で購入し、当店に来店しました', 'store')).toEqual(['渋谷店']);

@@ -1,3 +1,4 @@
+import type { PolicySource, PolicyState } from '../../shared/management';
 import type { Action, Purpose, RiskLevel, Stage } from '../core/model/types';
 
 export const PURPOSE_LABEL: Record<Purpose, string> = {
@@ -57,3 +58,18 @@ export function actionKey(a: Action): string {
   if (a.kind === 'replace') return 'replace';
   return a.kind;
 }
+
+/** 組織ポリシーの配布元（FR-18：出所を表示する） */
+export const POLICY_SOURCE_LABEL: Record<PolicySource, string> = {
+  server: '管理サーバー',
+  mdm: 'MDM',
+};
+
+/** 組織ポリシーを使えないときの短い表示。理由の全文は停止理由に出す */
+export const POLICY_ERROR_LABEL: Record<Exclude<PolicyState, 'active'>, string> = {
+  invalid: 'ポリシー読込み失敗',
+  expired: 'ポリシー期限切れ',
+  missing: 'ポリシー未取得',
+  outdated: '拡張の更新が必要',
+  stopped: '管理者が停止',
+};

@@ -45,7 +45,6 @@ const MATRIX: Record<Exclude<Category, 'date'>, StageRow> = {
   credential: row(del, del),
   confidential: row(keep, keep),
   custom: row(label, label),
-  orgTerm: row(label, label),
 };
 
 const DATE_MATRIX: Record<Role, StageRow> = {

@@ -28,6 +28,8 @@ const NAME_CH = `${HAN}${KATA}・A-Za-z0-9&`;
 const PREF_ALT = PREFECTURES.join('|');
 const HONORIFICS = 'さん|様|さま|氏|殿|くん|君|ちゃん|先生';
 /** ひらがなで始まる組織名の先頭部分（さくら・ひかり・みなと）。助詞を含むものは名前ではない */
+/** 地名の途中のひらがな（旭が丘・自由が丘・梅ヶ丘）。助詞の「が」と区別するため、後ろが地形の字のときだけ */
+const PLACE_GA = '[がヶケ](?=[丘岡谷崎浦森原沢台池島関峰])';
 const HIRA_NAME = `(?!という|として|とは|との|から|より|など)(?:(?![のはがをにでへ])[${HIRA}]){2,6}`;
 
 type Rule = {
@@ -243,6 +245,16 @@ const RULES: Rule[] = [
     evidence: label('直前に「〒」または「郵便番号」'),
   },
   {
+    id: 'postal-line',
+    category: 'postalCode',
+    // 履歴書などの PDF では「〒」が線画で描かれて文字として読めず、番号だけの行が住所の行の上に残る
+    re: re(`(?<=^|\\n)[ \\t]*(\\d{3}-?\\d{4})[ \\t]*(?=\\r?\\n[ \\t]*(?:${PREF_ALT}))`),
+    group: 1,
+    tier: TIER.certainRule,
+    certainty: '推定',
+    evidence: pattern('都道府県から始まる住所の行のすぐ上の7桁の番号'),
+  },
+  {
     id: 'ip',
     category: 'ipAddress',
     re: re('(?<![\\d.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)(?![\\d.])'),
@@ -382,10 +394,26 @@ const RULES: Rule[] = [
     validate: (v) => /[都道府県市区町村郡0-9０-９]/u.test(v) && !new RegExp(`(?:${HONORIFICS})$`, 'u').test(v),
   },
   {
+    // 表の欄から取り出した文章（PDF・画像）では、見出しだけの行の次の行に値がある（「現住所\n〒100-0001 東京都…」）
+    id: 'address-label-line',
+    category: 'address',
+    re: re(`(?<![^\\n])[ \\t]*(?:[${HAN}]{0,4}住所|所在地)[ \\t]*\\r?\\n[ \\t]*([^\\n]+)`),
+    group: 1,
+    tier: TIER.certainRule,
+    certainty: '確定',
+    evidence: label('直前に「住所」などの見出し'),
+    adjust: (v, start) => {
+      const head = /^〒?\s?\d{3}-?\d{4}\s*/u.exec(v)?.[0].length ?? 0;
+      return head < v.length ? { start: start + head, end: start + v.length } : null;
+    },
+    // 次の行がほかの見出しや文のときは住所ではない。都道府県・市区町村の字と番地の数字の両方があるものだけ
+    validate: (v) => /[都道府県市区町村郡]/u.test(v) && /[0-9一二三四五六七八九十]/u.test(v) && !/[。、]/u.test(v) && !isFieldLabel(v),
+  },
+  {
     id: 'address-shape',
     category: 'address',
-    // 町名・建物名はひらがなを含みうる（美しが丘・ハイツみどり）
-    re: re(`(?:${PREF_ALT})?[${HAN}${KATA}${HIRA}ヶケ]{1,15}?[0-9一二三四五六七八九十]{1,4}(?:丁目|番地|番|号|-)(?:[0-9]{1,5}(?:番地|番|号|-)?){0,3}(?:\\s?[${HAN}${KATA}${HIRA}A-Za-z]{1,15}?[0-9]{2,4}(?:号室)?)?`),
+    // 町名・建物名はひらがなを含みうる（美しが丘・ハイツみどり）。建物名と部屋番号の間に空白があってもよい（メゾン青葉 309号室）
+    re: re(`(?:${PREF_ALT})?[${HAN}${KATA}${HIRA}ヶケ]{1,15}?[0-9一二三四五六七八九十]{1,4}(?:丁目|番地|番|号|-)(?:[0-9]{1,5}(?:番地|番|号|-)?){0,3}(?:\\s?[${HAN}${KATA}${HIRA}A-Za-z]{1,15}?(?:[0-9]{2,4}(?:号室)?|\\s[0-9]{1,5}号室))?`),
     tier: TIER.heuristicRule,
     certainty: '推定',
     evidence: pattern('丁目・番地などを含む住所の形'),
@@ -450,12 +478,27 @@ const RULES: Rule[] = [
     evidence: { kind: 'context', detail: '直後に「在住」「出身」など' },
     validate: (v) => !NON_PLACE.has(v),
   },
+  {
+    // 自宅の最寄り駅は住まいの場所を絞り込める（履歴書の「最寄り駅」欄・「〇〇駅から徒歩5分」）
+    id: 'nearest-station',
+    category: 'place',
+    re: re(`(?:最寄り?駅[^\\n:：]{0,10}[:：]?[ \\t]*\\r?\\n?[ \\t]*(?:[${HAN}${KATA}A-Za-z]{1,12}線[ \\t]?)?([${HAN}${KATA}ヶケ]{1,10}駅)|(?<![${HAN}${KATA}])([${HAN}${KATA}ヶケ]{1,10}駅)(?=[ \\t]*(?:から)?[ \\t]*(?:徒歩|バス|自転車)))`),
+    tier: TIER.heuristicRule,
+    certainty: '推定',
+    evidence: { kind: 'context', detail: '「最寄り駅」の欄、または直後に「徒歩」など' },
+    adjust: (v, start) => {
+      const m = new RegExp(`[${HAN}${KATA}ヶケ]{1,10}駅$`, 'u').exec(v);
+      return m ? { start: start + m.index, end: start + v.length } : null;
+    },
+    validate: (v) => !/^(?:最寄り?|各|主要|始発|終着|乗換|当|次|隣|同|本|停車|最寄)駅$/u.test(v),
+  },
   // --- 組織・店舗・部署・役職 ---
   {
     id: 'org-form-prefix',
     category: 'orgName',
     // 法人の種類は名前の先頭にある（「三つ葉商事株式会社 経営企画室」の後半を社名にしない）。改行はまたがない
-    re: re(`(?<![${NAME_CH}])(?:${ORG_FORM})[ \\u3000]?(?:${HIRA_NAME})?[${NAME_CH}]{1,20}`),
+    // 名前がひらがなで始まり途中に「の」を含むもの（株式会社さくらのデザイン）も拾う
+    re: re(`(?<![${NAME_CH}])(?:${ORG_FORM})[ \\u3000]?(?:(?!さん|さま|ちゃん|くん)${HIRA_NAME}(?:の(?=[${NAME_CH}]))?)?[${NAME_CH}]{1,20}`),
     tier: TIER.heuristicRule,
     certainty: '確定',
     evidence: pattern('法人の種類（株式会社など）を含む'),
@@ -469,16 +512,28 @@ const RULES: Rule[] = [
     tier: TIER.heuristicRule,
     certainty: '確定',
     evidence: pattern('法人の種類（株式会社など）を含む'),
+    // 数字だけの前置き（履歴書の「2024 5 株式会社…」の月）は社名ではない。後ろに名前が続く形は org-form-prefix で拾う
+    validate: (v) => !/^[0-9]+[ \u3000]?(?:株式会社|有限会社|合同会社|（株）|\(株\)|（有）|\(有\))$/u.test(v),
   },
   {
     id: 'org-suffix',
     category: 'orgName',
-    // ひらがなで始まる名前（さくら内科クリニック・みなと信用金庫）も拾う
-    re: re(`(?<![${NAME_CH}])(?:${HIRA_NAME})?[${NAME_CH}]{0,15}(?:${ORG_SUFFIX})`),
+    // ひらがなで始まる名前（さくら内科クリニック・みなと信用金庫）も拾う。地名の「が丘」（旭が丘高等学校）も名前の途中に含める
+    re: re(`(?<![${NAME_CH}])(?:${HIRA_NAME})?(?:[${NAME_CH}]|${PLACE_GA}){0,15}(?:${ORG_SUFFIX})`),
     tier: TIER.heuristicRule,
     certainty: '推定',
     evidence: pattern('銀行・学校・病院などの名前の形'),
     validate: (v) => !NON_ORG.has(v) && !NON_ORG_LEADING.test(v),
+  },
+  {
+    // 地名などの名前が前に付いた公共の施設（実習先・活動先）。「図書館」だけのような一般の語は除く
+    id: 'facility',
+    category: 'orgName',
+    re: re(`(?<![${NAME_CH}])(?:[${NAME_CH}]|${PLACE_GA}){2,15}(?:交流センター|福祉センター|市民センター|文化センター|子育て支援センター|公民館|図書館|博物館|美術館|児童館|市民会館|文化会館|体育館|老人ホーム|保健所|児童相談所)`),
+    tier: TIER.heuristicRule,
+    certainty: '推定',
+    evidence: pattern('地名などの付いた施設の名前の形'),
+    validate: (v) => !/^(?:市立|区立|町立|村立|県立|都立|府立|道立|国立|公立|私立|地域|近く|近所|地元|最寄り?)/u.test(v),
   },
   {
     id: 'org-kana-bank',
@@ -539,7 +594,8 @@ const RULES: Rule[] = [
     // 表や履歴書の欄（「氏名 山田 太郎」や、タブ区切りの「氏名」「山田太郎」）。区切りが空白・タブだけのもの
     id: 'name-label-cell',
     category: 'personName',
-    re: re(`(?<![^\n\t])(?:ご?氏名|お名前|名前)[ \t]+((?:[${HAN}][${HAN}${HIRA}]{0,5}|[${KATA}]{2,10})(?: (?:[${HAN}${HIRA}]{1,6}|[${KATA}]{1,10}))?)(?=[ \t]*(?:\r?\n|\t|$|㊞|印))`),
+    // PDF・画像から取り出した文章では、見出しだけの行の次の行に値がある（「氏名\n山田 太郎」）。ローマ字の氏名（Yamada Taro）も
+    re: re(`(?<![^\n\t])(?:ご?氏名|お名前|名前)(?:[ \t]+|[ \t]*\r?\n[ \t]*)((?:[${HAN}][${HAN}${HIRA}]{0,5}|[${KATA}]{2,10})(?: (?:[${HAN}${HIRA}]{1,6}|[${KATA}]{1,10}))?|[A-Z][A-Za-z'-]{1,20}(?: [A-Z][A-Za-z'-]{1,20}){1,2})(?=[ \t]*(?:\r?\n|\t|$|㊞|印))`),
     group: 1,
     tier: TIER.certainRule,
     certainty: '確定',
@@ -677,8 +733,79 @@ export function detectRules(text: string): Span[] {
       });
     }
   }
+  spans.push(...wrappedAddresses(norm, spans));
   spans.push(...detectFurigana(text));
   return spans;
 }
 
-export const RULE_ENGINE_VERSION = 'rule-4';
+// 狭い欄の住所は行の途中で折り返される（PDF・画像では「…新町6丁\n目24番13号 リバーサイド朝凪 506\n号室」）。
+// 行末で番地が途切れている住所は、続きの行まで住所にする。
+const ADDRESS_CHARS = `${HAN}${KATA}${HIRA}ヶケA-Za-z0-9 \\-`;
+/** 都道府県から始まり、番地の途中で行が終わる行（郵便番号が前にあってもよい） */
+const WRAPPED_HEAD = new RegExp(`^[ \\t]*(?:〒?\\s?\\d{3}-?\\d{4}[ \\t]*)?((?:${PREF_ALT})[${ADDRESS_CHARS}]{1,40})[ \\t]*$`, 'u');
+/** 前の行の終わりが番地の途中（数字・丁・丁目・番・ハイフン） */
+const BROKEN_END = /(?:[0-9一二三四五六七八九十]|丁目?|番|-)$/u;
+/** 町名の途中で折り返し、次の行が町名の残りと番地で始まる（「…市青葉⏎台7丁目11番17号」） */
+const TOWN_REST = new RegExp(`^[${HAN}${HIRA}${KATA}ヶケ]{0,6}[0-9一二三四五六七八九十]{1,4}(?:丁目|番地|番|-)`, 'u');
+/** 番地・部屋番号の続き */
+const CONTINUES = /^(?:[0-9]|丁目?|目|番地?|号室?|室|-)/u;
+/** 番地の後の行の建物名と部屋番号だけの行（「メゾン青葉 309号室」） */
+const BUILDING_ONLY = new RegExp(`^[${HAN}${KATA}${HIRA}A-Za-z]{2,20} ?[0-9]{1,5}(?:号室|号|階|F)?$`, 'u');
+
+/** 部屋番号だけの行（建物名の後で折り返したもの） */
+const ROOM_ONLY = /^[0-9]{1,5}(?:号室|号|階|F)$/u;
+
+function wrappedAddresses(norm: string, found: Span[]): Span[] {
+  const lineAt = (pos: number) => {
+    const s = norm.lastIndexOf('\n', pos - 1) + 1;
+    const e = norm.indexOf('\n', pos);
+    return { s, e: e < 0 ? norm.length : e };
+  };
+  const out: Span[] = [];
+  // 続きを足した住所は、元の住所と同じ確かさにする（統合で元の住所だけが残らないように）
+  const seeds: { start: number; end: number; tier: SpanTier; certainty: Certainty; evidence: Evidence[] }[] = found
+    .filter((f) => f.category === 'address')
+    .map((f) => ({ start: f.start, end: f.end, tier: f.tier, certainty: f.certainty, evidence: f.evidence }));
+  // 番地や町名の途中で切れた行は住所の形の規則に合わないので、都道府県から行末までを種にする
+  for (let p = 0; p < norm.length; ) {
+    const { s, e } = lineAt(p);
+    const m = WRAPPED_HEAD.exec(norm.slice(s, e));
+    if (m) {
+      const at = s + m.index + m[0].indexOf(m[1]!);
+      seeds.push({ start: at, end: at + m[1]!.length, tier: TIER.heuristicRule, certainty: '推定', evidence: [] });
+    }
+    p = e + 1;
+  }
+  const seen = new Set<number>();
+  for (const seed of seeds) {
+    let { e } = lineAt(seed.start);
+    // 住所が行末まで続いているときだけ（文の途中の住所の後ろは見ない）
+    if (norm.slice(seed.end, e).trim() || seen.has(e)) continue;
+    seen.add(e);
+    let end = seed.end;
+    let prev = norm.slice(lineAt(seed.start).s, e).trim();
+    for (let lines = 0; lines < 3 && e < norm.length; lines++) {
+      const next = lineAt(e + 1);
+      const text = norm.slice(next.s, next.e).trim();
+      if (!text || text.length > 40 || !new RegExp(`^[${ADDRESS_CHARS}]+$`, 'u').test(text)) break;
+      const ok = (BROKEN_END.test(prev) && CONTINUES.test(text)) || (lines === 0 && TOWN_REST.test(text)) || /^(?:目|番地?|号室?|室)/u.test(text) || (/(?:号|番地?)$/u.test(prev) && BUILDING_ONLY.test(text)) || ROOM_ONLY.test(text);
+      if (!ok) break;
+      end = next.s + norm.slice(next.s, next.e).trimEnd().length;
+      prev = text;
+      e = next.e;
+    }
+    if (end === seed.end) continue;
+    out.push({
+      start: seed.start,
+      end,
+      category: 'address',
+      source: 'rule',
+      certainty: seed.certainty,
+      evidence: [...seed.evidence, pattern('行の途中で折り返された住所の続き')],
+      tier: seed.tier,
+    });
+  }
+  return out;
+}
+
+export const RULE_ENGINE_VERSION = 'rule-5';

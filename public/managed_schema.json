@@ -9,14 +9,17 @@
     "minStage": { "type": "string", "description": "最低段階（A/B）" },
     "minProfile": { "type": "array", "items": { "type": "string" }, "description": "必ず実行するエンジン（rule/ner/nano）" },
     "lockedCategories": { "type": "array", "items": { "type": "string" }, "description": "利用者が解除できない情報の種類" },
-    "orgTerms": {
-      "type": "array",
-      "items": { "type": "object", "properties": { "term": { "type": "string" }, "label": { "type": "string" } } },
-      "description": "組織の辞書（外部に出さない語）"
-    },
-    "prohibitedPatterns": { "type": "array", "items": { "type": "string" }, "description": "禁止パターン（正規表現）" },
     "requireConditions": { "type": "boolean", "description": "利用条件の確認を出力の必須条件にする" },
     "contact": { "type": "string", "description": "相談先（画面に表示）" },
+    "management": {
+      "type": "object",
+      "properties": {
+        "endpoint": { "type": "string", "description": "管理サーバーの URL（拡張のビルド時に許可したオリジンと一致させる）" },
+        "enrollmentToken": { "type": "string", "description": "部署ごとの登録トークン（tc_ で始まる）" },
+        "policyPublicKey": { "type": "string", "description": "ポリシーの署名を確かめる Ed25519 の公開鍵（SPKI を base64 にしたもの）" }
+      },
+      "description": "組織ポリシーを管理サーバーから受け取るための初期設定（SERVER_DESIGN.md §12）。これだけを置くと、ポリシー本体はサーバーから受け取る"
+    },
     "reporting": {
       "type": "object",
       "properties": {

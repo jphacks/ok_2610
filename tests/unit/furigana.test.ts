@@ -84,6 +84,28 @@ describe('ふりがな（読み仮名）', () => {
     ]);
   });
 
+  test('NER が読みも人名として拾ったときも、氏名と同じ人物にする（見出しが線画で文字にならない PDF）', async () => {
+    const text = 'やまぐち はなこ\n山口 花子\n';
+    const span = (start: number, end: number) => ({ start, end, category: 'personName' as const, source: 'ner' as const, certainty: '推定' as const, evidence: [{ kind: 'model' as const, detail: 'NER' }], tier: TIER.ner });
+    const at = text.indexOf('山口');
+    const ner: EngineOutput = { engine: 'ner', status: 'ok', ms: 0, spans: [span(0, 8), span(at, at + 5)] };
+    const r = await run(text, { settings: settings({ labelsOnly: true, profile: ['rule', 'ner'] }), engineOutputs: [ner] });
+    const label = new Map(r.entities.map((e) => [e.id, e.label]));
+    expect(r.candidates.filter((c) => c.categories.includes('personName')).map((c) => [c.text, c.entityId ? label.get(c.entityId) : undefined])).toEqual([
+      ['やまぐち はなこ', '人物A'],
+      ['山口 花子', '人物A'],
+    ]);
+  });
+
+  test('住所のすぐ上の読み（郵便番号の行をはさんでも）を住所として隠す', async () => {
+    const r = await run('ほっかいどう さっぽろし ちゅうおうく\n0600001\n北海道札幌市中央区北一条西2-1 コーポ北101号室\n');
+    expect(r.masked).not.toMatch(/ほっかいどう|さっぽろ|0600001|北一条/u);
+    expect(r.candidates.find((c) => c.text.startsWith('ほっかいどう'))?.categories).toContain('address');
+    // 文の途中の地名の上の行は読みにしない
+    const r2 = await run('ありがとうございます\n昨日は北海道に行きました\n');
+    expect(r2.candidates.map((c) => c.text)).not.toContain('ありがとうございます');
+  });
+
   test('氏名の直後の括弧の読み', async () => {
     const { found } = await people('氏名：山田太郎（やまだ たろう）\n');
     expect(found.map((f) => f[1])).toEqual(found.map(() => '人物A'));
@@ -93,6 +115,19 @@ describe('ふりがな（読み仮名）', () => {
   test('氏名の上の行でも、文は読みにしない', async () => {
     const { found } = await people('こんにちは\n氏名　山田太郎\n');
     expect(found.map((f) => f[0])).toEqual(['山田太郎']);
+  });
+});
+
+describe('ふりがな: 見出しのない欄（PDF の中央に写真がある型など）', () => {
+  test('氏名だけの行と読みだけの行が上下に並べば、どちらも同じ人物', async () => {
+    expect(names('履歴書\n清水　結衣\nしみず　ゆい\n生年月日')).toEqual(['清水　結衣', 'しみず　ゆい']);
+    expect(names('なかの　はるか\n中野　遥')).toEqual(['なかの　はるか', '中野　遥']);
+    const { found } = await people('清水　結衣\nしみず　ゆい\n');
+    expect(found.map((f) => f[1])).toEqual(['人物A', '人物A']);
+  });
+  test('語の数が合わない行・見出しの行は氏名にしない', () => {
+    expect(names('学歴 職歴\nがくれき しょくれき')).toEqual([]);
+    expect(names('東京\nとうきょう')).toEqual([]);
   });
 });
 

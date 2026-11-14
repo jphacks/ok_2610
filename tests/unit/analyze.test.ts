@@ -134,6 +134,20 @@ describe('組織ポリシー（FR-18, AT-09）', () => {
     expect(resolvePolicy({ version: '1', minStage: 'C' }, now).status).toBe('error');
   });
 
+  test('廃止した組織辞書・禁止パターン・組織指定語が残った古いポリシーも読め、何も検出しない', async () => {
+    const policy = resolvePolicy({
+      version: '2026.10',
+      orgTerms: [{ term: 'プロジェクトX' }],
+      prohibitedPatterns: ['(不正な正規表現'],
+      lockedCategories: ['orgTerm', 'personName'],
+      prohibitedCategories: ['orgTerm'],
+    }, now);
+    expect(policy).toMatchObject({ status: 'active', locked: ['personName'], prohibited: [] });
+    const r = await run('プロジェクトXの件でご相談です。', { policy });
+    expect(byText(r, 'プロジェクトX')).toEqual([]);
+    expect(r.blockers.some((b) => b.kind === 'policy')).toBe(false);
+  });
+
   test('最低段階と解除禁止を適用し、利用条件が不明なら止める', async () => {
     const policy = resolvePolicy({ version: '2026.10', minStage: 'B', lockedCategories: ['personName'], requireConditions: true }, now);
     const base = await run(demoEmail, { policy, settings: settings({ stage: 'A' }) });

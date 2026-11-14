@@ -32,7 +32,6 @@ const TEMPLATES: Record<Category, Template> = {
   credential: { problem: 'パスワードやAPIキーは、それだけで不正アクセスにつながります。', ifKept: '認証情報が外部へ渡ります。出力前に必ず取り除いてください。' },
   confidential: { problem: '価格・契約条件・未公表の情報は、組織の機密に当たる場合があります。', ifKept: '組織の規則によっては外部へ出せない情報です。' },
   custom: { problem: '利用者がカスタム辞書で指定した語です。', ifKept: '指定した語がそのまま外部へ渡ります。' },
-  orgTerm: { problem: '組織の辞書で指定された語です。', ifKept: '組織が外部へ出さないと定めた語が渡ります。' },
 };
 
 const ROLE_TEXT: Record<Role, string> = {

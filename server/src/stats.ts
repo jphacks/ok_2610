@@ -34,14 +34,14 @@ function range(q: StatsQuery): [string, string] {
   return [`${q.from}T00:00Z`, `${end.toISOString().slice(0, 10)}T00:00Z`];
 }
 
-export function computeStats(db: Db, orgId: number, q: StatsQuery): Stats {
+export async function computeStats(db: Db, orgId: number, q: StatsQuery): Promise<Stats> {
   const [start, end] = range(q);
   const dept = q.department ?? null;
-  const where = `e.org_id = ? AND e.occurred_hour >= ? AND e.occurred_hour < ?${dept ? ' AND e.department = ?' : ''}`;
+  const where = `e.org_id = $1 AND e.occurred_hour >= $2 AND e.occurred_hour < $3${dept ? ' AND e.department = $4' : ''}`;
   const args = dept ? [orgId, start, end, dept] : [orgId, start, end];
-  const all = (sql: string) => db.prepare(sql).all(...args) as Row[];
+  const all = (sql: string) => db.query(sql, args) as Promise<Row[]>;
 
-  const kinds = all(`SELECT e.kind AS kind, COUNT(*) AS n FROM usage_events e WHERE ${where} GROUP BY e.kind`);
+  const kinds = await all(`SELECT e.kind AS kind, COUNT(*) AS n FROM usage_events e WHERE ${where} GROUP BY e.kind`);
   const totals = {
     outputs: num(kinds.find((r) => r.kind === 'output')?.n),
     blocked: num(kinds.find((r) => r.kind === 'blocked')?.n),
@@ -54,23 +54,23 @@ export function computeStats(db: Db, orgId: number, q: StatsQuery): Stats {
     return { ...empty, suppressed: true, totals: { outputs: 0, blocked: 0 } };
   }
 
-  return {
-    ...empty,
-    byDestination: all(`SELECT e.destination AS destination, COUNT(*) AS n FROM usage_events e WHERE ${where} AND e.kind = 'output' GROUP BY e.destination ORDER BY n DESC`)
-      .map((r) => ({ destination: String(r.destination), count: num(r.n) })),
-    masked: all(`SELECT c.category AS category, SUM(c.masked) AS n FROM usage_event_categories c JOIN usage_events e ON e.event_id = c.event_id WHERE ${where} AND e.kind = 'output' GROUP BY c.category HAVING n > 0 ORDER BY n DESC`)
-      .map((r) => ({ category: String(r.category), count: num(r.n) })),
-    kept: all(`SELECT c.category AS category, SUM(c.kept) AS n FROM usage_event_categories c JOIN usage_events e ON e.event_id = c.event_id WHERE ${where} AND e.kind = 'output' GROUP BY c.category HAVING n > 0 ORDER BY n DESC`)
-      .map((r) => ({ category: String(r.category), count: num(r.n) })),
-    riskLevels: all(`SELECT e.risk_level AS level, COUNT(*) AS n FROM usage_events e WHERE ${where} AND e.kind = 'output' AND e.risk_level IS NOT NULL GROUP BY e.risk_level`)
-      .map((r) => ({ level: String(r.level), count: num(r.n) })),
-    blockers: all(`SELECT b.blocker_kind AS kind, COUNT(*) AS n FROM usage_event_blockers b JOIN usage_events e ON e.event_id = b.event_id WHERE ${where} GROUP BY b.blocker_kind ORDER BY n DESC`)
-      .map((r) => ({ kind: String(r.kind), count: num(r.n) })),
-    daily: all(`SELECT substr(e.occurred_hour, 1, 10) AS date, SUM(e.kind = 'output') AS outputs, SUM(e.kind = 'blocked') AS blocked FROM usage_events e WHERE ${where} GROUP BY date ORDER BY date`)
-      .map((r) => ({ date: String(r.date), outputs: num(r.outputs), blocked: num(r.blocked) })),
-    departments: dept
-      ? []
+  const [byDestination, masked, kept, riskLevels, blockers, daily, departments] = await Promise.all([
+    all(`SELECT e.destination AS destination, COUNT(*) AS n FROM usage_events e WHERE ${where} AND e.kind = 'output' GROUP BY e.destination ORDER BY n DESC`)
+      .then((rs) => rs.map((r) => ({ destination: String(r.destination), count: num(r.n) }))),
+    all(`SELECT c.category AS category, SUM(c.masked) AS n FROM usage_event_categories c JOIN usage_events e ON e.event_id = c.event_id WHERE ${where} AND e.kind = 'output' GROUP BY c.category HAVING SUM(c.masked) > 0 ORDER BY n DESC`)
+      .then((rs) => rs.map((r) => ({ category: String(r.category), count: num(r.n) }))),
+    all(`SELECT c.category AS category, SUM(c.kept) AS n FROM usage_event_categories c JOIN usage_events e ON e.event_id = c.event_id WHERE ${where} AND e.kind = 'output' GROUP BY c.category HAVING SUM(c.kept) > 0 ORDER BY n DESC`)
+      .then((rs) => rs.map((r) => ({ category: String(r.category), count: num(r.n) }))),
+    all(`SELECT e.risk_level AS level, COUNT(*) AS n FROM usage_events e WHERE ${where} AND e.kind = 'output' AND e.risk_level IS NOT NULL GROUP BY e.risk_level`)
+      .then((rs) => rs.map((r) => ({ level: String(r.level), count: num(r.n) }))),
+    all(`SELECT b.blocker_kind AS kind, COUNT(*) AS n FROM usage_event_blockers b JOIN usage_events e ON e.event_id = b.event_id WHERE ${where} GROUP BY b.blocker_kind ORDER BY n DESC`)
+      .then((rs) => rs.map((r) => ({ kind: String(r.kind), count: num(r.n) }))),
+    all(`SELECT substr(e.occurred_hour, 1, 10) AS day, SUM(CASE WHEN e.kind = 'output' THEN 1 ELSE 0 END) AS outputs, SUM(CASE WHEN e.kind = 'blocked' THEN 1 ELSE 0 END) AS blocked FROM usage_events e WHERE ${where} GROUP BY day ORDER BY day`)
+      .then((rs) => rs.map((r) => ({ date: String(r.day), outputs: num(r.outputs), blocked: num(r.blocked) }))),
+    dept
+      ? Promise.resolve([])
       : all(`SELECT e.department AS department, COUNT(*) AS n FROM usage_events e WHERE ${where} AND e.kind = 'output' AND e.department IS NOT NULL GROUP BY e.department ORDER BY n DESC`)
-          .map((r) => ({ department: String(r.department), count: num(r.n) >= MIN_GROUP ? num(r.n) : null })),
-  };
+          .then((rs) => rs.map((r) => ({ department: String(r.department), count: num(r.n) >= MIN_GROUP ? num(r.n) : null }))),
+  ]);
+  return { ...empty, byDestination, masked, kept, riskLevels, blockers, daily, departments };
 }
