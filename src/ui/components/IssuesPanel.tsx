@@ -10,24 +10,30 @@ export function IssuesPanel({ onSettings }: { onSettings: (section?: SettingsSec
   const fresh = useStore((s) => !s.analyzing && s.resultRevision === s.revision);
   if (!result) return null;
   const nonBlockingRecheck = result.recheck.filter((f) => !f.blocking);
+  const fix: { section: SettingsSection; label: string } | null = result.blockers.some((b) => b.kind === 'conditions')
+    ? { section: 'conditions', label: '利用条件に回答する' }
+    : result.blockers.some((b) => b.kind === 'engineFailed')
+      ? { section: 'preferences', label: '検査の設定を開く' }
+      : null;
   return (
     <div className="issues-panel">
       {fresh && result.blockers.length > 0 && (
         <div className="callout danger" role="alert">
           <strong>出力を止めています</strong>
           <ul>{result.blockers.map((b) => <li key={b.message}>{b.message}</li>)}</ul>
-          <button type="button" onClick={() => onSettings(result.blockers.some(b => b.kind === 'conditions') ? 'conditions' : 'preferences')}>設定を確認する</button>
+          {/* 設定で直せる理由のときだけ、直す場所へ案内する（秘密の値などは設定では直らない） */}
+          {fix && <button type="button" onClick={() => onSettings(fix.section)}>{fix.label}</button>}
         </div>
       )}
-      {nonBlockingRecheck.length > 0 && <div className="callout warn"><strong>加工後の再検査</strong><ul>{nonBlockingRecheck.map(f => <li key={f.message}>{f.message}</li>)}</ul></div>}
-      {result.opIssues.length > 0 && <div className="callout warn"><strong>手動操作の確認</strong><ul>{result.opIssues.map(i => <li key={`${i.opIndex}-${i.reason}`}>{i.kind === 'rejected' ? '適用できません: ' : '再確認が必要です: '}{i.reason}</li>)}</ul></div>}
+      {nonBlockingRecheck.length > 0 && <div className="callout warn"><strong>再検査で見つかった語</strong><ul>{nonBlockingRecheck.map(f => <li key={f.message}>{f.message}</li>)}</ul></div>}
+      {result.opIssues.length > 0 && <div className="callout warn"><strong>手で直した箇所</strong><ul>{result.opIssues.map(i => <li key={`${i.opIndex}-${i.reason}`}>{i.kind === 'rejected' ? '適用できません: ' : '要確認: '}{i.reason}</li>)}</ul></div>}
       <details className="inspection-details">
         <summary>検査の詳細</summary>
         <ul className="compact">{result.engines.map(e => <li key={e.engine}>{ENGINE_NAME[e.engine]}: {e.status === 'ok' ? `実行（${e.spanCount}件${e.ms ? `・${e.ms}ms` : ''}）` : e.status === 'skipped' ? '設定で無効' : `使えません（${e.reason}）`}</li>)}
           {result.coverage.filter(c => c.status !== '検査済').map(c => <li key={`${c.start}-${c.end}`}>{c.status}: {c.reason}</li>)}
         </ul>
       </details>
-      {result.candidates.length === 0 && result.text.trim() && <p className="hint">検出候補はありません。見逃しがないことの保証ではありません。</p>}
+      {result.candidates.length === 0 && result.text.trim() && <p className="hint">検出なし（見逃しがないとは限りません）</p>}
     </div>
   );
 }

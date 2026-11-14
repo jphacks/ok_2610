@@ -3,8 +3,12 @@ import { ALL_CATEGORIES, categoryLabel } from '../../core/model/categories';
 import { countOccurrences, manualMaskOps } from '../../core/manual';
 import type { Category, OutputSegment } from '../../core/model/types';
 import { Icon } from './Icon';
+import { FacesPanel } from './FacesPanel';
+import { ImagePreview } from './ImagePreview';
+import { PdfPreview } from './PdfPreview';
 import { SheetPreview } from './SheetPreview';
 import { useStore } from '../store';
+import './review.css';
 
 /** 原文の中での選択範囲を、data-start を手がかりに文字位置へ戻す */
 function selectionOffsets(): { start: number; end: number } | null {
@@ -48,6 +52,7 @@ export function Preview({ mode, onMode, detail }: { mode: 'masked' | 'original';
   const [term, setTerm] = useState('');
   const [all, setAll] = useState(true);
   const [category, setCategory] = useState<Category>('custom');
+  const [maskOpen, setMaskOpen] = useState(false);
   if (!result || !result.text.trim()) return null;
 
   // 選んだ範囲を入力欄へ写す。前後の空白は隠す対象に含めない
@@ -61,10 +66,20 @@ export function Preview({ mode, onMode, detail }: { mode: 'masked' | 'original';
     const range = { start: r.start + lead, end: r.start + lead + trimmed.length };
     setAnchor(range);
     setTerm(trimmed);
+    setMaskOpen(true);
   };
   const needle = term.trim();
   const planned = needle ? manualMaskOps(result.text, needle, category, result.candidates, { all, ...(anchor ? { anchor } : {}) }) : [];
   const total = countOccurrences(result.text, needle);
+  const status = !needle
+    ? null
+    : total === 0
+      ? '文章の中に見つかりません。'
+      : planned.length === 0
+        ? 'すでにすべて加工されています。'
+        : planned.length < total && all
+          ? `${total}箇所のうち、未加工の${planned.length}箇所を隠します。`
+          : null;
   const apply = () => {
     addOps(planned);
     setAnchor(null);
@@ -86,6 +101,8 @@ export function Preview({ mode, onMode, detail }: { mode: 'masked' | 'original';
   };
   // 読み込んだ Excel・CSV は、文章に直さずシートの表として描く
   const sheetSource = source && source.kind !== 'pdf' && source.kind !== 'image' && source.text === result.text ? source : null;
+  // PDF・画像は、保存するファイルの仕上がり（顔・塗りつぶし）もここで確かめる。PDF のまま保存できないときは文章でコピーするので出さない
+  const mediaSource = source && (source.kind === 'image' || (source.kind === 'pdf' && source.blockers.length === 0)) && source.text === result.text ? source : null;
 
   const originalChunks: { start: number; text: string; id?: string }[] = [];
   let cursor = 0;
@@ -117,7 +134,7 @@ export function Preview({ mode, onMode, detail }: { mode: 'masked' | 'original';
         <span><span className="mark changed">加工</span> {counts.changed}</span>
         <span><span className="mark kept">残した候補</span> {counts.kept}</span>
         <span><span className="mark changed manual">手動</span> {counts.manual}</span>
-        <span className="legend-hint">押すと理由と直し方が出ます</span>
+        <span className="legend-hint">印を押すと直せます</span>
       </p>
 
       {sheetSource ? (
@@ -162,7 +179,22 @@ export function Preview({ mode, onMode, detail }: { mode: 'masked' | 'original';
         </div>
       )}
       {detail}
-      <div className="manual-mask" role="group" aria-label="手動でマスク">
+      <details
+        className="manual-mask"
+        role="group"
+        aria-label="手動でマスク"
+        open={maskOpen}
+        onToggle={(e) => {
+          const open = (e.target as HTMLDetailsElement).open;
+          setMaskOpen(open);
+          // 閉じたら、入れかけた語は捨てる
+          if (!open) {
+            setAnchor(null);
+            setTerm('');
+          }
+        }}
+      >
+        <summary>見落としを手で隠す</summary>
         <div className="row">
           <input
             value={term}
@@ -179,7 +211,7 @@ export function Preview({ mode, onMode, detail }: { mode: 'masked' | 'original';
             ))}
           </select>
         </div>
-        <div className="row">
+        <div className="row between manual-actions">
           <label className="inline">
             <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
             同じ語をすべて
@@ -187,24 +219,12 @@ export function Preview({ mode, onMode, detail }: { mode: 'masked' | 'original';
           <button type="button" onClick={apply} disabled={planned.length === 0}>
             マスクする{planned.length > 1 ? `（${planned.length}箇所）` : ''}
           </button>
-          {anchor || term ? (
-            <button type="button" className="ghost" onClick={() => { setAnchor(null); setTerm(''); }}>
-              取り消す
-            </button>
-          ) : null}
         </div>
-        <p className="hint">
-          {!needle
-            ? '加工漏れを見つけたら、文章を選ぶか語を入力して手動でマスクできます。'
-            : total === 0
-              ? '文章の中に見つかりません。'
-              : planned.length === 0
-                ? 'すでにすべて加工されています。'
-                : planned.length < total && all
-                  ? `${total}箇所のうち、まだ加工していない${planned.length}箇所をマスクします。`
-                  : null}
-        </p>
-      </div>
+        {status && <p className="hint">{status}</p>}
+      </details>
+      {mediaSource && mediaSource.faces.length > 0 && <FacesPanel source={mediaSource} />}
+      {mediaSource?.kind === 'pdf' && <PdfPreview source={mediaSource} />}
+      {mediaSource?.kind === 'image' && <ImagePreview source={mediaSource} />}
     </div>
   );
 }

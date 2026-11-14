@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Action, ManualOp } from '../../core/model/types';
 import { RISK_TONE } from '../labels';
 import { useStore } from '../store';
+import './review.css';
 
 /** 組合せリスク（FR-08〜10）。確率は出さず、根拠と追加加工の提案を示す */
 export function RiskPanel() {
@@ -60,12 +61,11 @@ export function RiskPanel() {
       </h3>
       {result.riskPlan && (
         <div className="risk-plan">
-          <p>
-            追加加工で「{result.riskPlan.levelAfter}」になる見込みです。
-          </p>
+          <p>対策で「{result.riskPlan.levelAfter}」に下がる見込み</p>
           <button
             type="button"
             className="risk-action"
+            title="合わせると、変わる箇所を本文で点線で示します"
             onClick={() => applyPlan()}
             onPointerEnter={() => setHighlight(planIds)}
             onPointerLeave={() => setHighlight([])}
@@ -74,7 +74,6 @@ export function RiskPanel() {
           >
             対策をまとめて適用（{result.riskPlan.steps.length}件）
           </button>
-          <p className="hint">ボタンに合わせると、変わる箇所が本文で点線で囲まれます。</p>
         </div>
       )}
       {appliedNote}
@@ -98,7 +97,7 @@ export function RiskPanel() {
         </ul>
         {finding.suggestions.length > 0 && (
           <>
-            <h4>効果の大きい追加加工</h4>
+            <h4>個別の対策</h4>
             <ul className="suggestions">
               {finding.suggestions.map((s) => (
                 <li key={s.candidateIds.join(',')}>

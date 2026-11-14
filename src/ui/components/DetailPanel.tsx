@@ -6,6 +6,8 @@ import { ALWAYS_LOCKED } from '../../core/policy';
 import { previewAction } from '../../core/transform/preview';
 import { ACTION_CHOICES, actionKey } from '../labels';
 import { useStore } from '../store';
+import { Icon } from './Icon';
+import './review.css';
 
 /**
  * 項目ごとの理由と手動修正（FR-14, FR-19）。
@@ -47,33 +49,19 @@ export function DetailPanel() {
   });
   if (c.action.kind === 'replace') options.unshift({ key: 'replace', label: '指定した語', short: '指定した語', action: c.action, output: c.action.text });
 
+  // AI推定の注記は上のチップと同じことを言うので、重ねて出さない
+  const notes = ex ? ex.notes.filter((n) => !(ex.aiInferred && n.includes('AIの推定'))) : [];
+
   return (
     <div className="card detail" aria-live="polite" ref={ref}>
-      <div className="row between">
-        <h3>理由</h3>
-        <button type="button" className="ghost" onClick={() => select(null)} aria-label="理由を閉じる">
-          閉じる
+      <div className="detail-head">
+        <h3 className="what">{ex?.what ?? c.text}</h3>
+        <button type="button" className="icon-button ghost" onClick={() => select(null)} aria-label="理由を閉じる" title="閉じる">
+          <Icon name="close" />
         </button>
       </div>
-      {ex && (
-        <>
-          <p className="what">{ex.what}</p>
-          {ex.aiInferred && <span className="chip chip-warn">{MESSAGES.aiInferred}</span>}
-          <ul className="why">
-            {ex.why.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-          <p className="if-kept"><span>そのまま残すと</span>{ex.ifKept}</p>
-          {ex.notes.length > 0 && (
-            <ul className="notes">
-              {ex.notes.map((n) => (
-                <li key={n}>{n}</li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
+      {ex?.aiInferred && <span className="chip chip-warn">{MESSAGES.aiInferred}</span>}
+      {ex?.why[0] && <p className="why-lead">{ex.why[0]}</p>}
 
       <div className="options" role="group" aria-label="処理を選ぶ">
         {options.map((o) => {
@@ -99,9 +87,28 @@ export function DetailPanel() {
         })}
       </div>
       {locked && <p className="hint">認証情報は残せません。どの設定でも消します。</p>}
+      {notes.length > 0 && (
+        <ul className="hint warn notes">
+          {notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
 
-      <details className="detail-more">
-        <summary>細かく直す（置き換える語・種類・同じ対象）</summary>
+      {ex && (
+        <details className="more detail-why">
+          <summary>詳しい理由</summary>
+          <ul className="why">
+            {ex.why.slice(1).map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+          <p className="if-kept"><span>そのまま残すと</span>{ex.ifKept}</p>
+        </details>
+      )}
+
+      <details className="more detail-more">
+        <summary>ほかの直し方</summary>
         <div className="row">
           <input value={replaceText} onChange={(e) => setReplaceText(e.target.value)} placeholder="置換語を入力" aria-label="置換語" />
           <button

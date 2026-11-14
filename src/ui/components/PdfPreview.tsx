@@ -53,9 +53,11 @@ export function PdfPreview({ source }: { source: PdfSource }) {
   return (
     <details className="pdf-preview" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary>PDF の仕上がりを確認</summary>
-      <p className="hint">
-        画像の中で隠しきれていない所は、ページの上をドラッグして四角形で囲むと、その部分を塗りつぶします（画像の部分だけに効きます。文字は「手動でマスク」をお使いください）。
-      </p>
+      <p className="hint">隠れていない所や顔は、ドラッグで囲むと塗りつぶします。</p>
+      <details className="more">
+        <summary>詳しく</summary>
+        <p className="hint">ページの中の画像の部分だけに効きます。文字は手順2の「見落としを手で隠す」で隠してください。</p>
+      </details>
       {busy && <p className="hint" role="status">仕上がりを作っています…</p>}
       {message && <p className="hint warn">{message}</p>}
       {rects.length > 0 && (

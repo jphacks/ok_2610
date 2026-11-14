@@ -7,10 +7,23 @@ export const PURPOSE_LABEL: Record<Purpose, string> = {
   rewrite: '文章の改善',
 };
 
+/** name は画面とテストで使う名前（変えるとテストの radio 名が変わる）。note は1行の説明 */
 export const STAGE_INFO: Record<Stage, { name: string; note: string }> = {
-  A: { name: 'A 識別情報を優先', note: '氏名・連絡先などを置き換えます。地域や出来事から特定される場合があります。' },
-  B: { name: 'B 属性も一般化', note: '年齢・地域・日付・所属を粗くします。珍しい経歴や組合せが残る場合は、結果の「対策をまとめて適用」で原因の項目だけを加工できます。' },
+  A: { name: 'A 識別情報を優先', note: '氏名・連絡先・番号を置き換えます' },
+  B: { name: 'B 属性も一般化', note: 'さらに地域・年齢・所属もぼかします' },
 };
+
+/**
+ * 隠す強さの見本。src/core/transform/stages.ts の表と generalize.ts の変換に合わせた実際の仕上がり
+ * （氏名→仮の名前、住所→A は都道府県・B は地方、年齢→B は年代、組織名→B は業種）。
+ * 組織名の B は「組織の区別」を残すと仮の名前（組織A）になる。
+ */
+export const STAGE_EXAMPLES: { from: string; A: string; B: string; orgB?: string }[] = [
+  { from: '山田太郎', A: '人物A', B: '人物A' },
+  { from: '東京都港区', A: '東京都', B: '関東地方' },
+  { from: '35歳', A: '35歳', B: '30代' },
+  { from: '○○株式会社', A: '○○株式会社', B: 'ある企業', orgB: '組織A' },
+];
 
 export const STAGES: Stage[] = ['A', 'B'];
 

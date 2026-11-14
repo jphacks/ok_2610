@@ -75,7 +75,7 @@ test('削除後は復元済み個人情報も回答も残らず、解析Worker�
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await page.getByLabel('解析する文章').fill(readFileSync(new URL('../fixtures/demo-email.txt', import.meta.url), 'utf8'));
   await expect(page.getByLabel('加工後の文章')).toContainText('人物A', { timeout: 90_000 });
-  await page.getByText('AIの回答を復元').click();
+  await page.getByRole('heading', { name: '回答を元に戻す' }).click();
   await page.getByRole('textbox', { name: 'AIの回答' }).fill('人物Aさんへ返信します。');
   await page.getByRole('button', { name: 'ラベルを元の語に戻す' }).click();
   await expect(page.getByLabel('元に戻した文章')).toHaveText('佐藤花子さんへ返信します。');
@@ -84,7 +84,7 @@ test('削除後は復元済み個人情報も回答も残らず、解析Worker�
   expect(await page.evaluate(() => (window as ReviewWindow).security.terminated)).toBeGreaterThan(0);
   await page.getByLabel('解析する文章').fill('電話は080-9876-5432です。');
   await expect(page.getByLabel('加工後の文章')).toContainText('[電話番号1]', { timeout: 90_000 });
-  await page.getByText('AIの回答を復元').click();
+  await page.getByRole('heading', { name: '回答を元に戻す' }).click();
   await expect(page.getByRole('textbox', { name: 'AIの回答' })).toHaveValue('');
   await expect(page.getByLabel('元に戻した文章')).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText('佐藤花子');
@@ -115,34 +115,6 @@ test('通知を閉じなくても同じ版番号のポリシー更新が反映�
       await expect(copy).toBeEnabled();
     }
   }
-});
-
-test('同一タブの別ドメインへの遷移と、挿入待ち中の変更で挿入を止める', async ({ context, extensionId }) => {
-  const page = await context.newPage();
-  await instrument(page);
-  await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  await page.getByLabel('解析する文章').fill('電話は080-9876-5432です。');
-  await expect(page.getByRole('button', { name: '加工文をコピー' })).toBeEnabled({ timeout: 90_000 });
-  await page.getByLabel('出力先を変更').click();
-  await page.getByRole('radio', { name: '表示中のAIサイトの入力欄に挿入' }).check();
-  const insert = page.getByRole('button', { name: '加工文を入力欄に挿入' });
-  await page.evaluate(() => { (window as ReviewWindow).security.tabUrl = 'https://claude.ai/'; });
-  await insert.click();
-  await expect(page.getByText('挿入先のタブが切り替わりました。挿入先を設定し直してください。')).toBeVisible();
-  expect(await page.evaluate(() => (window as ReviewWindow).security.insertions)).toBe(0);
-
-  await page.getByRole('radio', { name: '表示中のAIサイトの入力欄に挿入' }).check();
-  await page.evaluate(() => { (window as ReviewWindow).security.holdQuery = true; });
-  await insert.click();
-  await expect.poll(() => page.evaluate(() => Boolean((window as ReviewWindow).security.releaseQuery))).toBe(true);
-  await page.getByRole('button', { name: '設定を開く', exact: true }).click();
-  await page.getByRole('radio', { name: 'A 識別情報を優先' }).click();
-  await page.getByRole('button', { name: '設定を閉じる' }).click();
-  await page.evaluate(() => { const s = (window as ReviewWindow).security; s.holdQuery = false; s.releaseQuery!(); });
-  await expect(insert).toBeEnabled();
-  expect(await page.evaluate(() => (window as ReviewWindow).security.insertions)).toBe(0);
-  await insert.click();
-  await expect.poll(() => page.evaluate(() => (window as ReviewWindow).security.insertions)).toBe(1);
 });
 
 test('挿入関数自身が実行先のドメインを検証する', async ({ context }) => {

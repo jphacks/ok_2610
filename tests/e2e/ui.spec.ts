@@ -140,8 +140,6 @@ test('PDF を読み込むと、ページの文字（日本語を含む）が検�
   await expect(page.getByLabel('加工後の文章')).not.toContainText('sato.hanako@example.co.jp', { timeout: 90_000 });
 
   // PDF のまま保存する。隠した語は文字として残らない
-  await page.getByLabel('出力先を変更').click();
-  await page.getByLabel('PDF のまま保存（レイアウトを保つ）').check();
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '加工文をファイルに保存' }).click()]);
   expect(download.suggestedFilename()).toBe('面談記録_加工済み.pdf');
   const { readFileSync } = await import('node:fs');
@@ -154,7 +152,7 @@ test('PDF を読み込むと、ページの文字（日本語を含む）が検�
   expect(text).not.toContain('田中花子');
 
   // ラベル入りの PDF を読み込み、元の語に戻して保存する
-  await page.getByRole('heading', { name: 'AIの回答を復元' }).click();
+  await page.getByRole('heading', { name: '回答を元に戻す' }).click();
   await page.getByLabel('復元する Excel・CSV・PDF・画像ファイル').setInputFiles({ name: '面談記録_加工済み.pdf', mimeType: 'application/pdf', buffer: masked });
   const [restored] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '「面談記録_復元済み.pdf」を保存' }).click()]);
   const back = buildTextModel(await loadEditable(new Uint8Array(readFileSync((await restored.path())!))));
@@ -177,8 +175,6 @@ test('画像を読み込むと、中の文字が OCR で検査され、塗りつ
   await expect(page.getByLabel('読み込んだファイル')).toContainText('名刺.png');
   await expect(page.getByLabel('加工後の文章')).not.toContainText('090-1234-5678', { timeout: 90_000 });
 
-  await page.getByLabel('出力先を変更').click();
-  await page.getByLabel('画像として保存（隠す語を塗りつぶす・PNG）').check();
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '加工文をファイルに保存' }).click()]);
   expect(download.suggestedFilename()).toBe('名刺_加工済み.png');
   const masked = readFileSync((await download.path())!);
@@ -187,7 +183,7 @@ test('画像を読み込むと、中の文字が OCR で検査され、塗りつ
   expect(after).not.toContain('田中花子');
 
   // 保存した画像を読み込むと、元の画像に戻る
-  await page.getByRole('heading', { name: 'AIの回答を復元' }).click();
+  await page.getByRole('heading', { name: '回答を元に戻す' }).click();
   await page.getByLabel('復元する Excel・CSV・PDF・画像ファイル').setInputFiles({ name: '名刺_加工済み.png', mimeType: 'image/png', buffer: masked });
   await expect(page.getByText('元の画像に戻しました。')).toBeVisible({ timeout: 60_000 });
   const [restored] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '「名刺_復元済み.png」を保存' }).click()]);
@@ -222,8 +218,6 @@ test('Excel ファイルを読み込むと、セルの文字が検査される',
   await page.getByRole('button', { name: '加工後', exact: true }).click();
 
   // 加工文を、元と同じ形式（.xlsx）で保存する
-  await page.getByLabel('出力先を変更').click();
-  await page.getByLabel('元と同じ形式（.xlsx）で保存').check();
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '加工文をファイルに保存' }).click()]);
   expect(download.suggestedFilename()).toBe('顧客_加工済み.xlsx');
   const { readFileSync } = await import('node:fs');
@@ -235,7 +229,7 @@ test('Excel ファイルを読み込むと、セルの文字が検査される',
   expect(files['xl/media/image1.png']).toBeUndefined();
 
   // AIから戻ってきた Excel（ここでは加工後のファイル）を読み込み、元の語に戻して保存する
-  await page.getByRole('heading', { name: 'AIの回答を復元' }).click();
+  await page.getByRole('heading', { name: '回答を元に戻す' }).click();
   await page.getByLabel('復元する Excel・CSV・PDF・画像ファイル').setInputFiles({ name: '顧客_加工済み.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(readFileSync((await download.path())!)) });
   await expect(page.getByText(/1セル・1箇所を戻しました/)).toBeVisible();
   const [restored] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '「顧客_復元済み.xlsx」を保存' }).click()]);
@@ -244,9 +238,10 @@ test('Excel ファイルを読み込むと、セルの文字が検査される',
   expect(restoredSheet).toContain('sato.hanako@example.co.jp');
   await expect(page.getByText(/外部のサービスにはアップロードしないでください/)).toBeVisible();
 
-  // 削除して文章を入れ直すと、同じ形式での保存は選べなくなる
+  // 削除して文章を入れ直すと、ファイルでは保存せず文章のコピーだけになる
   await page.getByRole('button', { name: '削除', exact: true }).click();
   await page.getByRole('button', { name: '削除する' }).click();
   await page.getByLabel('解析する文章').fill('別の文章です。');
-  await expect(page.getByLabel('元と同じ形式（.xlsx）で保存')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '加工文をファイルに保存' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '加工文をコピー' })).toBeVisible();
 });
